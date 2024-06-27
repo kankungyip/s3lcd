@@ -2,8 +2,20 @@
 #ifndef __S3LCD_H__
 #define __S3LCD_H__
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
 #include "esp_lcd_panel_io.h"
 #include "mpfile.h"
+
+#if MP_TASK_COREID == 1
+#define RENDER_TASK_COREID (0)
+#else
+#define RENDER_TASK_COREID (1)
+#endif
+
+#define RENDER_TASK_PRIORITY   (ESP_TASK_PRIO_MIN + 1)
+#define RENDER_TASK_STACK_SIZE (2048)
 
 //
 // Default Values for T-Display-S3 170x320 ST7796
@@ -71,7 +83,6 @@ typedef union _bus_handle_t {
     esp_lcd_spi_bus_handle_t spi;
 } bus_handle_t;
 
-
 typedef struct _s3lcd_rotation_t {
     uint16_t width;     // width of the display in this rotation
     uint16_t height;    // height of the display in this rotation
@@ -81,6 +92,11 @@ typedef struct _s3lcd_rotation_t {
     bool mirror_x;      // set MADCTL MX bit 0x40
     bool mirror_y;      // set MADCTL MY bit 0x80
 } s3lcd_rotation_t;
+
+typedef struct _render_descriptor_t {
+    uint16_t *framebuf;
+    size_t pixels;
+} render_descriptor_t;
 
 typedef struct _s3lcd_obj_t {
     mp_obj_base_t base;
@@ -93,7 +109,9 @@ typedef struct _s3lcd_obj_t {
     bool inversion_mode;
     mp_file_t *fp;                          // file object
     size_t frame_buffer_size;               // frame buffer size in bytes
-    uint16_t *frame_buffer;                 // frame buffer
+    uint16_t **frame_buffer;                // used frame buffer
+    uint16_t *frame_buffer_1;               // frame buffer 1
+    uint16_t *frame_buffer_2;               // frame buffer 2
     uint16_t dma_rows;                      // dma transfer buffer height in rows
     uint16_t *dma_buffer;                   // dma transfer buffer
     size_t dma_buffer_size;                 // dma transfer buffer size in bytes
@@ -110,13 +128,17 @@ typedef struct _s3lcd_obj_t {
     mp_obj_t custom_init;                   // custom init sequence
     uint8_t rotations_len;                  // number of rotations
     uint8_t options;                        // options bit array: wrap (optional)
-	gpio_num_t rst;
+    gpio_num_t rst;
     bool swap_color_bytes;                  // swap color bytes (SPI only, I80 is builtin)
+    QueueHandle_t render_queue;
+    TaskHandle_t render_task;
 } s3lcd_obj_t;
 
 mp_obj_t s3lcd_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args);
 
 extern void draw_pixel(s3lcd_obj_t *self, int16_t x, int16_t y, uint16_t color, uint8_t alpha);
 extern void fast_hline(s3lcd_obj_t *self, int16_t x, int16_t y, int16_t w, uint16_t color, uint8_t alpha);
+
+extern void task_for_render(void *self_in);
 
 #endif // __ST7796_H__

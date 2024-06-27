@@ -110,7 +110,7 @@ static mp_obj_t s3lcd_spi_bus_make_new(const mp_obj_type_t *type, size_t n_args,
     // create new spi_bus object
     s3lcd_spi_bus_obj_t *self = m_new_obj(s3lcd_spi_bus_obj_t);
     self->base.type = &s3lcd_spi_bus_type;
-    self->name = "s3lcd_i80";
+    self->name = "s3lcd_spi";
     self->spi_host = args[ARG_spi_host].u_int;
     self->sclk_io_num = args[ARG_sclk_io_num].u_int;
     self->mosi_io_num = args[ARG_mosi_io_num].u_int;

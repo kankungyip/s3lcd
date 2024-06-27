@@ -32,6 +32,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+#include "esp_task.h"
 #include "esp_err.h"
 #include "esp_log.h"
 
@@ -118,6 +122,13 @@ s3lcd_rotation_t ROTATIONS_170x320[4] = {
     {320, 170, 0, 35, true,  false, true}
 };
 
+s3lcd_rotation_t ROTATIONS_240x280[4] = {
+    {240, 280, 0, 20, false, false, false},
+    {280, 240, 20, 0, true,  true,  false},
+    {240, 280, 0, 20, false, true,  true},
+    {280, 240, 20, 0, true,  false, true}
+};
+
 s3lcd_rotation_t ROTATIONS_240x240[4] = {
     {240, 240, 0, 0, false, false, false},
     {240, 240, 0, 0, true,  true,  false},
@@ -157,6 +168,7 @@ s3lcd_rotation_t *ROTATIONS[] = {
     ROTATIONS_240x320,              // default if no match
     ROTATIONS_320x480,
     ROTATIONS_170x320,
+    ROTATIONS_240x280,
     ROTATIONS_240x240,
     ROTATIONS_135x240,
     ROTATIONS_128x160,
@@ -232,7 +244,7 @@ static uint16_t alpha_blend_565(uint16_t fg, uint16_t bg, uint8_t alpha) {
 
 static void _setpixel(s3lcd_obj_t *self, uint16_t x, uint16_t y, uint16_t color, uint8_t alpha) {
     if ((x < self->width) && (y < self->height)) {
-        uint16_t *b = self->frame_buffer + y * self->width + x;
+        uint16_t *b = *(self->frame_buffer) + y * self->width + x;
         if (alpha < 255) {
             color = alpha_blend_565(color, *b, alpha);
         }
@@ -241,13 +253,17 @@ static void _setpixel(s3lcd_obj_t *self, uint16_t x, uint16_t y, uint16_t color,
 }
 
 // static uint16_t _getpixel(s3lcd_obj_t *self, uint16_t x, uint16_t y) {
-//     return *(self->frame_buffer + x + y * self->width);
+//     return *(*(self->frame_buffer) + x + y * self->width);
 // }
 
-static void _fill(s3lcd_obj_t *self, uint16_t color) {
-    uint16_t *b = self->frame_buffer;
+static void _fill(s3lcd_obj_t *self, uint16_t color, uint8_t alpha) {
+    uint16_t *fb = *(self->frame_buffer);
+    uint16_t fg = color;
     for (size_t i = 0; i < self->width * self->height; ++i) {
-        *b++ = color;
+        if (alpha < 255) {
+            fg = alpha_blend_565(color, *fb, alpha);
+        }
+        *fb++ = fg;
     }
 }
 
@@ -264,7 +280,7 @@ static void _fill_rect(s3lcd_obj_t *self, uint16_t x, uint16_t y, uint16_t w, ui
         h = self->height - y;
     }
 
-    uint16_t *b = self->frame_buffer + y * self->width + x;
+    uint16_t *b = *(self->frame_buffer) + y * self->width + x;
     if (alpha == 255) {
         while (h--) {
             for (size_t ww = w; ww; --ww) {
@@ -429,7 +445,7 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_fill_rect_obj, 6, 7, s3lcd_fill
 static mp_obj_t s3lcd_clear(size_t n_args, const mp_obj_t *args) {
     s3lcd_obj_t *self = MP_OBJ_TO_PTR(args[0]);
     OPTIONAL_ARG(1, mp_int_t, mp_obj_get_int, color, BLACK)
-    memset(self->frame_buffer, color & 0xff , self->frame_buffer_size);
+    memset(*(self->frame_buffer), color & 0xff , self->frame_buffer_size);
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_clear_obj, 2, 3, s3lcd_clear);
@@ -446,9 +462,9 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_clear_obj, 2, 3, s3lcd_clear);
 static mp_obj_t s3lcd_fill(size_t n_args, const mp_obj_t *args) {
     s3lcd_obj_t *self = MP_OBJ_TO_PTR(args[0]);
     OPTIONAL_ARG(1, mp_int_t, mp_obj_get_int, color, BLACK)
-    // OPTIONAL_ARG(2, mp_int_t, mp_obj_get_int, alpha, 255)
+    OPTIONAL_ARG(2, mp_int_t, mp_obj_get_int, alpha, 255)
 
-    _fill(self, color);
+    _fill(self, color, alpha);
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_fill_obj, 2, 3, s3lcd_fill);
@@ -576,6 +592,7 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_line_obj, 6, 7, s3lcd_line);
 /// -- width: width of the image
 /// -- height: height of the image
 /// optional parameters:
+/// -- key: transparent color
 /// -- alpha defaults to 255
 ///
 
@@ -587,15 +604,20 @@ static mp_obj_t s3lcd_blit_buffer(size_t n_args, const mp_obj_t *args) {
     mp_int_t y = mp_obj_get_int(args[3]);
     mp_int_t w = mp_obj_get_int(args[4]);
     mp_int_t h = mp_obj_get_int(args[5]);
-    OPTIONAL_ARG(6, mp_int_t, mp_obj_get_int, alpha, 255)
+    OPTIONAL_ARG(6, mp_int_t, mp_obj_get_int, key, -1)
+    OPTIONAL_ARG(7, mp_int_t, mp_obj_get_int, alpha, 255)
 
     uint16_t *src = buf_info.buf;
     uint16_t stride = self->width - w;
-    uint16_t *dst = (uint16_t *) self->frame_buffer + (y * self->width + x);
+    uint16_t *dst = *(self->frame_buffer) + y * self->width + x;
 
     for (int yy = 0; yy < h; yy++) {
         for (int xx = 0; xx < w; xx++) {
             if (xx+x < 0 || xx+x >= self->width || yy+y < 0 || yy+y >= self->height) {
+                src++;
+                dst++;
+            }
+            else if (*src == key) {
                 src++;
                 dst++;
             }
@@ -610,7 +632,7 @@ static mp_obj_t s3lcd_blit_buffer(size_t n_args, const mp_obj_t *args) {
 
     return mp_const_none;
 }
-static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_blit_buffer_obj, 6, 7, s3lcd_blit_buffer);
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_blit_buffer_obj, 6, 8, s3lcd_blit_buffer);
 
 ///
 /// .draw(font, string|int, x, y, {color , scale, alpha})
@@ -913,6 +935,8 @@ static mp_obj_t s3lcd_write(size_t n_args, const mp_obj_t *args) {
         const byte *map_s = map_data, *map_top = map_data + map_len;
         uint16_t char_index = 0;
 
+        uint16_t *fb = *(self->frame_buffer);
+
         while (map_s < map_top) {
             unichar map_ch;
             map_ch = utf8_get_char(map_s);
@@ -940,7 +964,7 @@ static mp_obj_t s3lcd_write(size_t n_args, const mp_obj_t *args) {
                 }
 
                 for (int yy = 0; yy < height; yy++) {
-                    uint16_t *b = &(self->frame_buffer)[x + ((y + yy) * self->width)];
+                    uint16_t *b = &fb[x + ((y + yy) * self->width)];
                     for (int xx = 0; xx < width; xx++) {
                         if (get_color(bpp)) {
                             if (alpha == 255) {
@@ -1005,7 +1029,7 @@ static mp_obj_t s3lcd_bitmap_from_tuple(size_t n_args, const mp_obj_t *args) {
         mp_raise_ValueError(MP_ERROR_TEXT("bitmap size too small for width and height"));
     }
     uint16_t *s = (uint16_t *)bufinfo.buf;
-    uint16_t *d = self->frame_buffer + (y * self->width) + x;
+    uint16_t *d = *(self->frame_buffer) + y * self->width + x;
     if (alpha == 255) {
         COPY_TO_BUFFER(self, s, d, width, height)
     } else {
@@ -1065,7 +1089,7 @@ static mp_obj_t s3lcd_bitmap_from_module(size_t n_args, const mp_obj_t *args) {
     }
 
     for (int yy = 0; yy < height; yy++) {
-        uint16_t *b = self->frame_buffer + (yy + y) * self->width + x;
+        uint16_t *b = *(self->frame_buffer) + (yy + y) * self->width + x;
         for (int xx = 0; xx < width; xx++) {
             int color_idx = get_color(bpp);
             uint16_t color = mp_obj_get_int(palette[color_idx]);
@@ -1163,7 +1187,7 @@ static mp_obj_t s3lcd_text(size_t n_args, const mp_obj_t *args) {
             uint16_t buf_idx = 0;
             uint16_t chr_idx = (chr - first) * (height * wide);
             for (uint8_t line = 0; line < height; line++) {
-                uint16_t *b = self->frame_buffer + x0 + (y0 + line) * self->width;
+                uint16_t *b = *(self->frame_buffer) + x0 + (y0 + line) * self->width;
                 for (uint8_t line_byte = 0; line_byte < wide; line_byte++) {
                     uint8_t chr_data = font_data[chr_idx];
                     for (uint8_t bit = 8; bit; bit--) {
@@ -1340,14 +1364,15 @@ static mp_obj_t s3lcd_scroll(size_t n_args, const mp_obj_t *args) {
         dy = -1;
     }
 
+    uint16_t *fb = *(self->frame_buffer);
     for (; y != yend; y += dy) {
         for (int x = sx; x != xend; x += dx) {
             int src_x = x - xstep;
             int src_y = y - ystep;
             if (src_x >= 0 && src_x < self->width && src_y >= 0 && src_y < self->height) {
-                self->frame_buffer[y * self->width + x] = self->frame_buffer[src_y * self->width + src_x];
+                fb[y * self->width + x] = fb[src_y * self->width + src_x];
             } else {
-                self->frame_buffer[y * self->width + x] = fill;
+                fb[y * self->width + x] = fill;
             }
         }
     }
@@ -1450,7 +1475,7 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
         ESP_ERROR_CHECK(esp_lcd_new_panel_io_i80(self->bus_handle.i80, &io_config, &io_handle));
         self->io_handle = io_handle;
     } else if (mp_obj_is_type(self->bus, &s3lcd_spi_bus_type)) {
-         s3lcd_spi_bus_obj_t *config = MP_OBJ_TO_PTR(self->bus);
+        s3lcd_spi_bus_obj_t *config = MP_OBJ_TO_PTR(self->bus);
         self->swap_color_bytes = config->flags.swap_color_bytes;
         spi_bus_config_t buscfg = {
             .sclk_io_num = config->sclk_io_num,
@@ -1506,10 +1531,26 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     esp_lcd_panel_invert_color(panel_handle, self->inversion_mode);
     set_rotation(self);
 
-    self->frame_buffer = m_malloc(self->frame_buffer_size);
-    memset(self->frame_buffer, 0, self->frame_buffer_size);
+    self->frame_buffer_1 = m_malloc(self->frame_buffer_size);
+    self->frame_buffer_2 = m_malloc(self->frame_buffer_size);
+    self->frame_buffer = &self->frame_buffer_1;
+    memset(*(self->frame_buffer), 0, self->frame_buffer_size);
 
     // esp_lcd_panel_io_tx_param(self->io_handle, 0x13, NULL, 0);
+
+    self->render_queue = xQueueCreate(1, sizeof(render_descriptor_t));
+
+    if (xTaskCreatePinnedToCore(
+        task_for_render,
+        "s3lcd_render",
+        RENDER_TASK_STACK_SIZE,
+        self,
+        RENDER_TASK_PRIORITY,
+        (TaskHandle_t *)&self->render_task,
+        RENDER_TASK_COREID) != pdPASS) {
+
+        mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("failed to create render task"));
+    }
 
     return mp_const_none;
 }
@@ -1907,7 +1948,8 @@ static mp_obj_t s3lcd_jpg(size_t n_args, const mp_obj_t *args) {
         res = jd_prepare(&jdec, input_func, self->work, 3100, &devid);
         if (res == JDR_OK) {
             // Initialize output device
-            devid.fbuf = (uint8_t *)self->frame_buffer;
+            uint16_t *fb = *(self->frame_buffer);
+            devid.fbuf = (uint8_t *)fb;
             devid.wfbuf = self->width;
             devid.self = self;
             res = jd_decomp(&jdec, jpg_out, 0);     // Start to decompress with 1/1 scaling
@@ -2229,7 +2271,7 @@ static mp_obj_t s3lcd_png_write(size_t n_args, const mp_obj_t *args) {
 
             rc = PNG_encodeBegin(pPNG, width, height, PNG_PIXEL_TRUECOLOR, 24, NULL, 9);
             if (rc == PNG_SUCCESS) {
-                uint16_t *p = self->frame_buffer + x + self->width * y;
+                uint16_t *p = *(self->frame_buffer) + x + self->width * y;
                 for (int row = y; row <= y+height && rc == PNG_SUCCESS; row++) {
                     rc = PNG_addRGB565Line(pPNG, p, self->work_buffer, row-y);
                     p += self->width;
@@ -2596,6 +2638,12 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_fill_polygon_obj, 4, 9, s3lcd_f
 
 
 //
+// render in esp32 core
+//
+
+
+
+//
 // copy rows from the framebuffer to the dma buffer and send it to the display beginning at row.
 //
 //  self: s3lcd object
@@ -2627,6 +2675,27 @@ void s3lcd_dma_display(s3lcd_obj_t *self, uint16_t *src, uint16_t row, uint16_t 
     }
 }
 
+// FreeRTOS task used for render
+void task_for_render(void *self_in) {
+    s3lcd_obj_t *self = (s3lcd_obj_t *)self_in;
+
+    render_descriptor_t descriptor;
+
+    for (;;) {
+        if (xQueueReceive(self->render_queue, &descriptor, portMAX_DELAY)) {
+            for (int y = 0; y < self->height - self->dma_rows + 1; y += self->dma_rows) {
+                s3lcd_dma_display(self, descriptor.framebuf, y, self->dma_rows, descriptor.pixels);
+                descriptor.framebuf += descriptor.pixels;
+            }
+
+            if (self->height % self->dma_rows != 0) {
+                size_t remaining = self->height % self->dma_rows;
+                s3lcd_dma_display(self, descriptor.framebuf, (self->height - remaining), remaining, remaining * self->width);
+            }
+        }
+    }
+}
+
 ///
 /// .show()
 /// Show the framebuffer.
@@ -2635,15 +2704,30 @@ void s3lcd_dma_display(s3lcd_obj_t *self, uint16_t *src, uint16_t row, uint16_t 
 static mp_obj_t s3lcd_show(size_t n_args, const mp_obj_t *args) {
     s3lcd_obj_t *self = MP_OBJ_TO_PTR(args[0]);
     size_t pixels = self->dma_rows * self->width;
-    uint16_t *fb = self->frame_buffer;
-    for (int y = 0; y < self->height - self->dma_rows + 1; y += self->dma_rows) {
-        s3lcd_dma_display(self, fb, y, self->dma_rows, pixels);
-        fb += pixels;
+    uint16_t *fb = *(self->frame_buffer);
+
+    if (self->frame_buffer != &self->frame_buffer_2) {
+        self->frame_buffer = &self->frame_buffer_2;
+    } else {
+        self->frame_buffer = &self->frame_buffer_1;
     }
 
-    if (self->height % self->dma_rows != 0) {
-        size_t remaining = self->height % self->dma_rows;
-        s3lcd_dma_display(self, fb, (self->height - remaining), remaining, remaining * self->width);
+    // for (int y = 0; y < self->height - self->dma_rows + 1; y += self->dma_rows) {
+    //     s3lcd_dma_display(self, fb, y, self->dma_rows, pixels);
+    //     fb += pixels;
+    // }
+
+    // if (self->height % self->dma_rows != 0) {
+    //     size_t remaining = self->height % self->dma_rows;
+    //     s3lcd_dma_display(self, fb, (self->height - remaining), remaining, remaining * self->width);
+    // }
+
+    render_descriptor_t descriptor;
+    descriptor.framebuf = fb;
+    descriptor.pixels = pixels;
+
+    if (xQueueSend(self->render_queue, &descriptor, portMAX_DELAY) != pdPASS) {
+        mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("failed to send buffer to queue"));
     }
 
     return mp_const_none;
@@ -2677,7 +2761,10 @@ static mp_obj_t s3lcd_deinit(size_t n_args, const mp_obj_t *args) {
     m_free(self->work);
     self->work = NULL;
 
-    m_free(self->frame_buffer);
+    m_free(self->frame_buffer_1);
+    m_free(self->frame_buffer_2);
+    self->frame_buffer_1 = NULL;
+    self->frame_buffer_2 = NULL;
     self->frame_buffer = NULL;
     self->frame_buffer_size = 0;
 
@@ -2685,6 +2772,16 @@ static mp_obj_t s3lcd_deinit(size_t n_args, const mp_obj_t *args) {
     self->dma_buffer = NULL;
     self->dma_buffer_size = 0;
     self->dma_rows = 0;
+
+    if (self->render_task != NULL) {
+        vTaskDelete(self->render_task);
+        self->render_task = NULL;
+    }
+
+    if (self->render_queue != NULL) {
+        vQueueDelete(self->render_queue);
+        self->render_queue = NULL;
+    }
 
     return mp_const_none;
 }
@@ -2874,6 +2971,10 @@ mp_obj_t s3lcd_make_new(const mp_obj_type_t *type,
     self->options = args[ARG_options].u_int & 0xff;
     self->frame_buffer_size = self->width * self->height * 2;
     self->frame_buffer = NULL;
+    self->frame_buffer_1 = NULL;
+    self->frame_buffer_2 = NULL;
+    self->render_queue = NULL;
+    self->render_task = NULL;
     return MP_OBJ_FROM_PTR(self);
 }
 
