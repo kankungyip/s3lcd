@@ -27,6 +27,7 @@
  * THE SOFTWARE.
  */
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <math.h>
 #include <stdio.h>
@@ -66,7 +67,7 @@
 #include "s3lcd_i80_bus.h"
 #include "s3lcd_spi_bus.h"
 
-#include "jpg/tjpgd565.h"
+#include "jpg/tjpgd.h"
 
 #define PNGLE_NO_GAMMA_CORRECTION
 #include "png/pngle.h"
@@ -1533,8 +1534,11 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
 
     self->frame_buffer_1 = m_malloc(self->frame_buffer_size);
     self->frame_buffer_2 = m_malloc(self->frame_buffer_size);
+    self->frame_buffer_3 = m_malloc(self->frame_buffer_size);
     self->frame_buffer = &self->frame_buffer_1;
-    memset(*(self->frame_buffer), 0, self->frame_buffer_size);
+    memset(self->frame_buffer_1, 0, self->frame_buffer_size);
+    memset(self->frame_buffer_2, 0, self->frame_buffer_size);
+    memset(self->frame_buffer_3, 0, self->frame_buffer_size);
 
     // esp_lcd_panel_io_tx_param(self->io_handle, 0x13, NULL, 0);
 
@@ -1884,39 +1888,70 @@ static int jpg_out(                                         // 1:Ok, 0:Aborted
     IODEV *dev = (IODEV *)jd->device;
     uint16_t wd = dev->wfbuf;
     uint16_t ws = rect->right - rect->left + 1;
-    uint16_t stride = wd - ws;
+    // uint16_t stride = wd - ws;
 
     // Copy the decompressed RGB rectangular to the frame buffer (assuming RGB565)
     uint16_t *src = (uint16_t *) bitmap;
-    uint16_t *dst = (uint16_t *) dev->fbuf + ((rect->top + jd->y_offs) * dev->wfbuf + rect->left + jd->x_offs);
+    // uint16_t *dst = (uint16_t *) dev->fbuf + ((rect->top + jd->y_offs) * dev->wfbuf + rect->left + jd->x_offs);
+    uint16_t *dst = (uint16_t *) dev->fbuf;
 
-    for (int y = rect->top; y <= rect->bottom; y++) {
-        for (int x = rect->left; x <= rect->right; x++) {
-            if ( x+jd->x_offs < 0 || x+jd->x_offs >= dev->self->width || y+jd->y_offs < 0 || y+jd->y_offs >= dev->self->height) {
-                src++;
-                dst++;
-            }
-            else {
-                *dst++ = *src++;
+    uint8_t zoomin = jd->zoomin;
+    if (zoomin == 0) {
+        zoomin = 1;
+    }
+
+    int x, y, i;
+    int dx, dy, j;
+    for (int ry = rect->top; ry <= rect->bottom; ry++) {
+        y = ry - rect->top;
+        dy = (ry*zoomin)+jd->y_offs;
+        i = y * ws;
+        j = dy * wd;
+        for (int rx = rect->left; rx <= rect->right; rx++) {
+            x = rx - rect->left;
+            dx = (rx*zoomin)+jd->x_offs;
+            for (int row = 0; row < zoomin; row++) {
+                if ((dy+row) >= 0 && (dy+row) < dev->self->height) {
+                    for (int col = 0; col < zoomin; col++) {
+                        if ((dx+col) >= 0 && (dx+col) < dev->self->width) {
+                            dst[j+(wd*row)+dx+col] = src[i+x];
+                        }
+                    }
+                }
             }
         }
-        dst += stride;
     }
+
+    // for (int y = rect->top; y <= rect->bottom; y++) {
+    //     for (int x = rect->left; x <= rect->right; x++) {
+    //         if ( x+jd->x_offs < 0 || x+jd->x_offs >= dev->self->width || y+jd->y_offs < 0 || y+jd->y_offs >= dev->self->height) {
+    //             src++;
+    //             dst++;
+    //         }
+    //         else {
+    //             *dst++ = *src++;
+    //         }
+    //     }
+    //     dst += stride;
+    // }
     return 1;
 }
 
 ///
-/// .jpg(filename, x, y)
+/// .jpg(filename, x, y {, zoomin})
 /// Draw jpg from a file at x, y
 /// required parameters:
 /// -- filename: filename
 /// -- x: x
 /// -- y: y
+/// optional parameters:
+/// -- zoomin: zoom in
 
 static mp_obj_t s3lcd_jpg(size_t n_args, const mp_obj_t *args) {
     s3lcd_obj_t *self = MP_OBJ_TO_PTR(args[0]);
     mp_int_t x = mp_obj_get_int(args[2]);
     mp_int_t y = mp_obj_get_int(args[3]);
+    OPTIONAL_ARG(4, mp_int_t, mp_obj_get_int, zoomin, 1)
 
     JRESULT res;                                    // Result code of TJpgDec API
     JDEC jdec;                                      // Decompression object
@@ -1942,11 +1977,12 @@ static mp_obj_t s3lcd_jpg(size_t n_args, const mp_obj_t *args) {
     }
 
     if (devid.fp || devid.data) {
-        jdec.x_offs = x;
-        jdec.y_offs = y;
         // Prepare to decompress
         res = jd_prepare(&jdec, input_func, self->work, 3100, &devid);
         if (res == JDR_OK) {
+            jdec.x_offs = x;
+            jdec.y_offs = y;
+            jdec.zoomin = zoomin;
             // Initialize output device
             uint16_t *fb = *(self->frame_buffer);
             devid.fbuf = (uint8_t *)fb;
@@ -2636,12 +2672,9 @@ static mp_obj_t s3lcd_fill_polygon(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_fill_polygon_obj, 4, 9, s3lcd_fill_polygon);
 
-
 //
 // render in esp32 core
 //
-
-
 
 //
 // copy rows from the framebuffer to the dma buffer and send it to the display beginning at row.
@@ -2675,7 +2708,10 @@ void s3lcd_dma_display(s3lcd_obj_t *self, uint16_t *src, uint16_t row, uint16_t 
     }
 }
 
+//
 // FreeRTOS task used for render
+//
+
 void task_for_render(void *self_in) {
     s3lcd_obj_t *self = (s3lcd_obj_t *)self_in;
 
@@ -2701,15 +2737,18 @@ void task_for_render(void *self_in) {
 /// Show the framebuffer.
 ///
 
-static mp_obj_t s3lcd_show(size_t n_args, const mp_obj_t *args) {
-    s3lcd_obj_t *self = MP_OBJ_TO_PTR(args[0]);
+void show(void *self_in) {
+    s3lcd_obj_t *self = (s3lcd_obj_t *)self_in;
+
     size_t pixels = self->dma_rows * self->width;
     uint16_t *fb = *(self->frame_buffer);
 
-    if (self->frame_buffer != &self->frame_buffer_2) {
-        self->frame_buffer = &self->frame_buffer_2;
-    } else {
+    if (self->frame_buffer == &self->frame_buffer_3) {
         self->frame_buffer = &self->frame_buffer_1;
+    } else if (self->frame_buffer == &self->frame_buffer_2) {
+        self->frame_buffer = &self->frame_buffer_3;
+    } else {
+        self->frame_buffer = &self->frame_buffer_2;
     }
 
     // for (int y = 0; y < self->height - self->dma_rows + 1; y += self->dma_rows) {
@@ -2729,11 +2768,15 @@ static mp_obj_t s3lcd_show(size_t n_args, const mp_obj_t *args) {
     if (xQueueSend(self->render_queue, &descriptor, portMAX_DELAY) != pdPASS) {
         mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("failed to send buffer to queue"));
     }
+}
 
+static mp_obj_t s3lcd_show(mp_obj_t self_in) {
+    s3lcd_obj_t *self = MP_OBJ_TO_PTR(self_in);
+    show(self);
     return mp_const_none;
 }
 
-static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_show_obj, 1, 1, s3lcd_show);
+static MP_DEFINE_CONST_FUN_OBJ_1(s3lcd_show_obj, s3lcd_show);
 
 ///
 /// .deinit()
@@ -2763,8 +2806,10 @@ static mp_obj_t s3lcd_deinit(size_t n_args, const mp_obj_t *args) {
 
     m_free(self->frame_buffer_1);
     m_free(self->frame_buffer_2);
+    m_free(self->frame_buffer_3);
     self->frame_buffer_1 = NULL;
     self->frame_buffer_2 = NULL;
+    self->frame_buffer_3 = NULL;
     self->frame_buffer = NULL;
     self->frame_buffer_size = 0;
 
@@ -2973,6 +3018,7 @@ mp_obj_t s3lcd_make_new(const mp_obj_type_t *type,
     self->frame_buffer = NULL;
     self->frame_buffer_1 = NULL;
     self->frame_buffer_2 = NULL;
+    self->frame_buffer_3 = NULL;
     self->render_queue = NULL;
     self->render_task = NULL;
     return MP_OBJ_FROM_PTR(self);

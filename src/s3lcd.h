@@ -112,6 +112,7 @@ typedef struct _s3lcd_obj_t {
     uint16_t **frame_buffer;                // used frame buffer
     uint16_t *frame_buffer_1;               // frame buffer 1
     uint16_t *frame_buffer_2;               // frame buffer 2
+    uint16_t *frame_buffer_3;               // frame buffer 3
     uint16_t dma_rows;                      // dma transfer buffer height in rows
     uint16_t *dma_buffer;                   // dma transfer buffer
     size_t dma_buffer_size;                 // dma transfer buffer size in bytes
@@ -139,6 +140,7 @@ mp_obj_t s3lcd_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, c
 extern void draw_pixel(s3lcd_obj_t *self, int16_t x, int16_t y, uint16_t color, uint8_t alpha);
 extern void fast_hline(s3lcd_obj_t *self, int16_t x, int16_t y, int16_t w, uint16_t color, uint8_t alpha);
 
+extern void show(void *self_in);
 extern void task_for_render(void *self_in);
 
 #endif // __ST7796_H__

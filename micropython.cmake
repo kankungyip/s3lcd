@@ -7,7 +7,7 @@ target_sources(usermod_s3lcd INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/src/s3lcd_i80_bus.c
     ${CMAKE_CURRENT_LIST_DIR}/src/s3lcd_spi_bus.c
     ${CMAKE_CURRENT_LIST_DIR}/src/mpfile.c
-    ${CMAKE_CURRENT_LIST_DIR}/src/jpg/tjpgd565.c
+    ${CMAKE_CURRENT_LIST_DIR}/src/jpg/tjpgd.c
     ${CMAKE_CURRENT_LIST_DIR}/src/png/pngle.c
     ${CMAKE_CURRENT_LIST_DIR}/src/png/miniz.c
     ${CMAKE_CURRENT_LIST_DIR}/src/pngenc/adler32.c
