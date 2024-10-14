@@ -2203,9 +2203,10 @@ void pngle_on_bitmap(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_
         h = height - y;
     }
 
+    uint8_t alpha = rgba[3];
     uint16_t color = color565(rgba[0], rgba[1], rgba[2]);
     uint16_t *b = self->work_buffer + y * width + x;
-    if (rgba[3] == 255) {
+    if (alpha == 255) {
         while (h--) {
             for (size_t ww = w; ww; --ww) {
                 *b++ = color;
@@ -2218,7 +2219,7 @@ void pngle_on_bitmap(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_
                 *b = alpha_blend_565(color, *b, alpha);
                 b++;
             }
-            b += self->width - w;
+            b += width - w;
         }
     }
 }
@@ -2288,8 +2289,6 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_png_obj, 4, 4, s3lcd_png);
 
 static mp_obj_t s3lcd_png_decode(size_t n_args, const mp_obj_t *args) {
     s3lcd_obj_t *self = MP_OBJ_TO_PTR(args[0]);
-
-    mp_int_t x = mp_obj_get_int(args[2]);
 
     char *buf = (char *)self->dma_buffer; // Reuse the dma_buffer
     int len, remain = 0;
