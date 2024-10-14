@@ -2176,6 +2176,53 @@ void pngle_on_draw(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t 
     _fill_rect(self, x + user_data->left, y + user_data->top, w, h, color, rgba[3]);
 }
 
+void pngle_on_bitmap(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint8_t rgba[4]) {
+    PNG_USER_DATA *user_data = pngle_get_user_data(pngle);
+    s3lcd_obj_t *self = user_data->self;
+
+    uint32_t width = pngle_get_width(pngle);
+    uint32_t height = pngle_get_height(pngle);
+
+    if (self->work_buffer == NULL) {
+        size_t bufsize = width * height * 2;
+        self->work_buffer = m_malloc(bufsize);
+        if (self->work_buffer) {
+            memset(self->work_buffer, 0, bufsize);
+        } else {
+            mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("out of memory"));
+        }
+    }
+
+    if ( x >= width || y >= height) {
+        return;
+    }
+    if (x + w > width) {
+        w = width - x;
+    }
+    if (y + h > height) {
+        h = height - y;
+    }
+
+    uint16_t color = color565(rgba[0], rgba[1], rgba[2]);
+    uint16_t *b = self->work_buffer + y * width + x;
+    if (rgba[3] == 255) {
+        while (h--) {
+            for (size_t ww = w; ww; --ww) {
+                *b++ = color;
+            }
+            b += width - w;
+        }
+    } else {
+        while (h--) {
+            for (size_t ww = w; ww; --ww) {
+                *b = alpha_blend_565(color, *b, alpha);
+                b++;
+            }
+            b += self->width - w;
+        }
+    }
+}
+
 ///
 /// .png(filename, x, y)
 /// Draw a PNG image on the display
@@ -2231,6 +2278,74 @@ static mp_obj_t s3lcd_png(size_t n_args, const mp_obj_t *args) {
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_png_obj, 4, 4, s3lcd_png);
+
+///
+/// .png_decode(filename)
+/// Decode a PNG image to bitmap
+/// required parameters:
+/// -- filename: the name of the file to load
+///
+
+static mp_obj_t s3lcd_png_decode(size_t n_args, const mp_obj_t *args) {
+    s3lcd_obj_t *self = MP_OBJ_TO_PTR(args[0]);
+
+    mp_int_t x = mp_obj_get_int(args[2]);
+
+    char *buf = (char *)self->dma_buffer; // Reuse the dma_buffer
+    int len, remain = 0;
+
+    PNG_USER_DATA user_data = {
+        self
+    };
+
+    self->work_buffer = NULL;
+
+    // allocate new pngle_t and store in self to protect memory from gc
+    self->work = pngle_new(self);
+    pngle_t *pngle = (pngle_t *)self->work;
+    pngle_set_user_data(pngle, (void *)&user_data);
+    pngle_set_draw_callback(pngle, pngle_on_bitmap);
+
+    if (mp_obj_is_type(args[1], &mp_type_bytes)) {
+        mp_buffer_info_t bufinfo;
+        mp_get_buffer_raise(args[1], &bufinfo, MP_BUFFER_READ);
+        int fed = pngle_feed(pngle, bufinfo.buf, bufinfo.len);
+        if (fed < 0) {
+            mp_raise_msg_varg(&mp_type_RuntimeError, MP_ERROR_TEXT("png decompress failed: %s"), pngle_error(pngle));
+        }
+    } else {
+        const char *filename = mp_obj_str_get_str(args[1]);
+        self->fp = mp_open(filename, "rb");
+        while ((len = mp_readinto(self->fp, buf + remain, self->dma_buffer_size - remain)) > 0) {
+            int fed = pngle_feed(pngle, buf, remain + len);
+            if (fed < 0) {
+                mp_raise_msg_varg(&mp_type_RuntimeError, MP_ERROR_TEXT("png decompress failed: %s"), pngle_error(pngle));
+            }
+            remain = remain + len - fed;
+            if (remain > 0) {
+                memmove(buf, buf + fed, remain);
+            }
+        }
+        mp_close(self->fp);
+    }
+
+    uint32_t width = pngle_get_width(pngle);
+    uint32_t height = pngle_get_height(pngle);
+    size_t bufsize = width * height * 2;
+
+    pngle_destroy(pngle);
+    self->work = NULL;
+
+    mp_obj_t result[3] = {
+        mp_obj_new_bytearray(bufsize, (mp_obj_t *)self->work_buffer),
+        mp_obj_new_int(width),
+        mp_obj_new_int(height)
+    };
+
+    return mp_obj_new_tuple(3, result);
+    self->work_buffer = NULL;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_png_decode_obj, 2, 2, s3lcd_png_decode);
 
 //
 //  png_write fileio callback functions
@@ -2864,6 +2979,7 @@ static const mp_rom_map_elem_t s3lcd_locals_dict_table[] = {
     {MP_ROM_QSTR(MP_QSTR_jpg), MP_ROM_PTR(&s3lcd_jpg_obj)},
     {MP_ROM_QSTR(MP_QSTR_jpg_decode), MP_ROM_PTR(&s3lcd_jpg_decode_obj)},
     {MP_ROM_QSTR(MP_QSTR_png), MP_ROM_PTR(&s3lcd_png_obj)},
+    {MP_ROM_QSTR(MP_QSTR_png_decode), MP_ROM_PTR(&s3lcd_png_decode_obj)},
     {MP_ROM_QSTR(MP_QSTR_png_write), MP_ROM_PTR(&s3lcd_png_write_obj)},
     {MP_ROM_QSTR(MP_QSTR_polygon_center), MP_ROM_PTR(&s3lcd_polygon_center_obj)},
     {MP_ROM_QSTR(MP_QSTR_polygon), MP_ROM_PTR(&s3lcd_polygon_obj)},
