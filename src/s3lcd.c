@@ -609,8 +609,8 @@ static mp_obj_t s3lcd_blit_buffer(size_t n_args, const mp_obj_t *args) {
     OPTIONAL_ARG(7, mp_int_t, mp_obj_get_int, alpha, 255)
 
     uint16_t *src = buf_info.buf;
-    uint16_t stride = self->width - w;
     uint16_t *dst = *(self->frame_buffer) + y * self->width + x;
+    int16_t stride = self->width - w;
 
     for (int yy = 0; yy < h; yy++) {
         for (int xx = 0; xx < w; xx++) {
