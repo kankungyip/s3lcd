@@ -27,33 +27,33 @@
  * THE SOFTWARE.
  */
 
-#include <stdint.h>
-#include <stdlib.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/queue.h"
-#include "esp_task.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_task.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
 
+#include "driver/dedic_gpio.h"
+#include "driver/gpio.h"
 #include "esp_lcd_panel_commands.h"
 #include "esp_lcd_panel_io.h"
-#include "esp_lcd_panel_vendor.h"
 #include "esp_lcd_panel_ops.h"
+#include "esp_lcd_panel_vendor.h"
 #include "soc/soc_caps.h"
-#include "driver/gpio.h"
-#include "driver/dedic_gpio.h"
 
-#include "py/obj.h"
-#include "py/objstr.h"
-#include "py/objmodule.h"
-#include "py/runtime.h"
 #include "py/builtin.h"
 #include "py/mphal.h"
+#include "py/obj.h"
+#include "py/objmodule.h"
+#include "py/objstr.h"
+#include "py/runtime.h"
 
 // Fix for MicroPython > 1.21 https://github.com/ricksorensen
 #if MICROPY_VERSION_MAJOR >= 1 && MICROPY_VERSION_MINOR > 21
@@ -76,11 +76,11 @@
 #define TAG "S3LCD"
 
 #define _swap_bytes(val) (((val >> 8) | (val << 8)) & 0xFFFF)
-#define _swap_int16_t(a, b) \
-    {                       \
-        int16_t t = a;      \
-        a = b;              \
-        b = t;              \
+#define _swap_int16_t(a, b)                                                                                            \
+    {                                                                                                                  \
+        int16_t t = a;                                                                                                 \
+        a = b;                                                                                                         \
+        b = t;                                                                                                         \
     }
 
 #define ABS(N) (((N) < 0) ? (-(N)) : (N))
@@ -102,81 +102,55 @@
 //
 // { width, height, x_gap, y_gap, swap_xy, mirror_x, mirror_y }
 
-s3lcd_rotation_t ROTATIONS_320x480[4] = {
-    {320, 480, 0, 0, false, true,  false},
-    {480, 320, 0, 0, true,  false, false},
-    {320, 480, 0, 0, false, false, true},
-    {480, 320, 0, 0, true,  true,  true}
-};
+s3lcd_rotation_t ROTATIONS_320x480[4] = {{320, 480, 0, 0, false, true, false},
+                                         {480, 320, 0, 0, true, false, false},
+                                         {320, 480, 0, 0, false, false, true},
+                                         {480, 320, 0, 0, true, true, true}};
 
-s3lcd_rotation_t ROTATIONS_240x320[4] = {
-    {240, 320, 0, 0, false, false, false},
-    {320, 240, 0, 0, true,  true,  false},
-    {240, 320, 0, 0, false, true,  true},
-    {320, 240, 0, 0, true,  false, true}
-};
+s3lcd_rotation_t ROTATIONS_240x320[4] = {{240, 320, 0, 0, false, false, false},
+                                         {320, 240, 0, 0, true, true, false},
+                                         {240, 320, 0, 0, false, true, true},
+                                         {320, 240, 0, 0, true, false, true}};
 
-s3lcd_rotation_t ROTATIONS_170x320[4] = {
-    {170, 320, 35, 0, false, false, false},
-    {320, 170, 0, 35, true,  true,  false},
-    {170, 320, 35, 0, false, true,  true},
-    {320, 170, 0, 35, true,  false, true}
-};
+s3lcd_rotation_t ROTATIONS_170x320[4] = {{170, 320, 35, 0, false, false, false},
+                                         {320, 170, 0, 35, true, true, false},
+                                         {170, 320, 35, 0, false, true, true},
+                                         {320, 170, 0, 35, true, false, true}};
 
-s3lcd_rotation_t ROTATIONS_240x280[4] = {
-    {240, 280, 0, 20, false, false, false},
-    {280, 240, 20, 0, true,  true,  false},
-    {240, 280, 0, 20, false, true,  true},
-    {280, 240, 20, 0, true,  false, true}
-};
+s3lcd_rotation_t ROTATIONS_240x280[4] = {{240, 280, 0, 20, false, false, false},
+                                         {280, 240, 20, 0, true, true, false},
+                                         {240, 280, 0, 20, false, true, true},
+                                         {280, 240, 20, 0, true, false, true}};
 
-s3lcd_rotation_t ROTATIONS_240x240[4] = {
-    {240, 240, 0, 0, false, false, false},
-    {240, 240, 0, 0, true,  true,  false},
-    {240, 240, 0, 80, false, true,  true},
-    {240, 240, 80, 0, true,  false, true}
-};
+s3lcd_rotation_t ROTATIONS_240x240[4] = {{240, 240, 0, 0, false, false, false},
+                                         {240, 240, 0, 0, true, true, false},
+                                         {240, 240, 0, 80, false, true, true},
+                                         {240, 240, 80, 0, true, false, true}};
 
-s3lcd_rotation_t ROTATIONS_135x240[4] = {
-    {135, 240, 52, 40, false, false, false},
-    {240, 135, 40, 53, true,  true,  false},
-    {135, 240, 53, 40, false, true,  true},
-    {240, 135, 40, 52, true,  false, true}
-};
+s3lcd_rotation_t ROTATIONS_135x240[4] = {{135, 240, 52, 40, false, false, false},
+                                         {240, 135, 40, 53, true, true, false},
+                                         {135, 240, 53, 40, false, true, true},
+                                         {240, 135, 40, 52, true, false, true}};
 
-s3lcd_rotation_t ROTATIONS_128x160[4] = {
-    {128, 160, 0, 0, false, false, false},
-    {160, 128, 0, 0, true,  true,  false},
-    {128, 160, 0, 0, false, true,  true},
-    {160, 128, 0, 0, true,  false, true}
-};
+s3lcd_rotation_t ROTATIONS_128x160[4] = {{128, 160, 0, 0, false, false, false},
+                                         {160, 128, 0, 0, true, true, false},
+                                         {128, 160, 0, 0, false, true, true},
+                                         {160, 128, 0, 0, true, false, true}};
 
-s3lcd_rotation_t ROTATIONS_80x160[4] = {
-    {80, 160, 26, 1, false, false, false},
-    {160, 80, 1, 26, true, true, false},
-    {80, 160, 26, 1, false, true,  true},
-    {160, 80, 1, 26, true,  false, true}
-};
+s3lcd_rotation_t ROTATIONS_80x160[4] = {{80, 160, 26, 1, false, false, false},
+                                        {160, 80, 1, 26, true, true, false},
+                                        {80, 160, 26, 1, false, true, true},
+                                        {160, 80, 1, 26, true, false, true}};
 
-s3lcd_rotation_t ROTATIONS_128x128[4] = {
-    {128, 128, 2, 1, false, false, false},
-    {128, 128, 1, 2, true,  true,  false},
-    {128, 128, 2, 3, false, true,  true},
-    {128, 128, 3, 2, true,  false, true}
-};
+s3lcd_rotation_t ROTATIONS_128x128[4] = {{128, 128, 2, 1, false, false, false},
+                                         {128, 128, 1, 2, true, true, false},
+                                         {128, 128, 2, 3, false, true, true},
+                                         {128, 128, 3, 2, true, false, true}};
 
-s3lcd_rotation_t *ROTATIONS[] = {
-    ROTATIONS_240x320,              // default if no match
-    ROTATIONS_320x480,
-    ROTATIONS_170x320,
-    ROTATIONS_240x280,
-    ROTATIONS_240x240,
-    ROTATIONS_135x240,
-    ROTATIONS_128x160,
-    ROTATIONS_80x160,
-    ROTATIONS_128x128,
-    NULL
-};
+s3lcd_rotation_t *ROTATIONS[] = {ROTATIONS_240x320, // default if no match
+                                 ROTATIONS_320x480, ROTATIONS_170x320, ROTATIONS_240x280,
+                                 ROTATIONS_240x240, ROTATIONS_135x240, ROTATIONS_128x160,
+                                 ROTATIONS_80x160,  ROTATIONS_128x128, NULL};
 
 //
 // flag to indicate an esp_lcd_panel_draw_bitmap operation is in progress
@@ -187,7 +161,8 @@ static volatile bool lcd_panel_active = false;
 static void s3lcd_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     (void)kind;
     s3lcd_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    mp_printf(print, "<s3lcd width=%u, height=%u rotation=%u color_space=%u>", self->width, self->height, self->rotation, self->color_space);
+    mp_printf(print, "<s3lcd width=%u, height=%u rotation=%u color_space=%u>", self->width, self->height,
+              self->rotation, self->color_space);
 }
 
 // static int brightness(uint16_t color) {
@@ -198,7 +173,7 @@ static void s3lcd_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind
 // }
 
 static uint16_t color565(uint8_t r, uint8_t g, uint8_t b) {
-    return (uint16_t) ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | ((b & 0xF8) >> 3);
+    return (uint16_t)((r & 0xF8) << 8) | ((g & 0xFC) << 3) | ((b & 0xF8) >> 3);
 }
 
 static uint16_t alpha_blend_565(uint16_t fg, uint16_t bg, uint8_t alpha) {
@@ -216,32 +191,32 @@ static uint16_t alpha_blend_565(uint16_t fg, uint16_t bg, uint8_t alpha) {
     return (r << 11) | (g << 5) | b;
 }
 
-#define OPTIONAL_ARG(arg_num, arg_type, arg_obj_get, arg_name, arg_default) \
-    arg_type arg_name = arg_default;                                        \
-    if (n_args > arg_num) {                                                 \
-        arg_name = arg_obj_get(args[arg_num]);                              \
-    }                                                                       \
+#define OPTIONAL_ARG(arg_num, arg_type, arg_obj_get, arg_name, arg_default)                                            \
+    arg_type arg_name = arg_default;                                                                                   \
+    if (n_args > arg_num) {                                                                                            \
+        arg_name = arg_obj_get(args[arg_num]);                                                                         \
+    }
 
-#define COPY_TO_BUFFER(self, s, d, w, h)                    \
-{                                                           \
-    while (h--) {                                           \
-        for (size_t ww = w; ww; --ww) {                     \
-                *d++ = *s++;                                \
-        }                                                   \
-        d += self->width - w;                               \
-    }                                                       \
-}
+#define COPY_TO_BUFFER(self, s, d, w, h)                                                                               \
+    {                                                                                                                  \
+        while (h--) {                                                                                                  \
+            for (size_t ww = w; ww; --ww) {                                                                            \
+                *d++ = *s++;                                                                                           \
+            }                                                                                                          \
+            d += self->width - w;                                                                                      \
+        }                                                                                                              \
+    }
 
-#define BLEND_TO_BUFFER(self, s, d, w, h, alpha)            \
-{                                                           \
-    while (h--) {                                           \
-        for (size_t ww = w; ww; --ww) {                     \
-            *d = alpha_blend_565(*s++, *d, alpha);          \
-            d++;                                            \
-        }                                                   \
-        d += self->width - w;                               \
-    }                                                       \
-}
+#define BLEND_TO_BUFFER(self, s, d, w, h, alpha)                                                                       \
+    {                                                                                                                  \
+        while (h--) {                                                                                                  \
+            for (size_t ww = w; ww; --ww) {                                                                            \
+                *d = alpha_blend_565(*s++, *d, alpha);                                                                 \
+                d++;                                                                                                   \
+            }                                                                                                          \
+            d += self->width - w;                                                                                      \
+        }                                                                                                              \
+    }
 
 static void _setpixel(s3lcd_obj_t *self, uint16_t x, uint16_t y, uint16_t color, uint8_t alpha) {
     if ((x < self->width) && (y < self->height)) {
@@ -268,7 +243,8 @@ static void _fill(s3lcd_obj_t *self, uint16_t color, uint8_t alpha) {
     }
 }
 
-static void _fill_rect(s3lcd_obj_t *self, uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color, uint8_t alpha) {
+static void _fill_rect(s3lcd_obj_t *self, uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color,
+                       uint8_t alpha) {
 
     if (x >= self->width || (y >= self->height)) {
         return;
@@ -399,7 +375,7 @@ static MP_DEFINE_CONST_FUN_OBJ_2(s3lcd_inversion_mode_obj, s3lcd_inversion_mode)
 
 static mp_obj_t s3lcd_idle_mode(mp_obj_t self_in, mp_obj_t value) {
     s3lcd_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    if(mp_obj_is_true(value))
+    if (mp_obj_is_true(value))
         esp_lcd_panel_io_tx_param(self->io_handle, ST77XX_IDLEON, NULL, 0);
     else
         esp_lcd_panel_io_tx_param(self->io_handle, ST77XX_IDLEOFF, NULL, 0);
@@ -434,7 +410,6 @@ static mp_obj_t s3lcd_fill_rect(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_fill_rect_obj, 6, 7, s3lcd_fill_rect);
 
-
 ///
 /// .clear({ 8_bit_color})
 /// Fast framebuffer clear to given color. The the high and low bytes of the
@@ -446,11 +421,10 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_fill_rect_obj, 6, 7, s3lcd_fill
 static mp_obj_t s3lcd_clear(size_t n_args, const mp_obj_t *args) {
     s3lcd_obj_t *self = MP_OBJ_TO_PTR(args[0]);
     OPTIONAL_ARG(1, mp_int_t, mp_obj_get_int, color, BLACK)
-    memset(*(self->frame_buffer), color & 0xff , self->frame_buffer_size);
+    memset(*(self->frame_buffer), color & 0xff, self->frame_buffer_size);
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_clear_obj, 2, 3, s3lcd_clear);
-
 
 ///
 /// .fill({color, alpha})
@@ -469,7 +443,6 @@ static mp_obj_t s3lcd_fill(size_t n_args, const mp_obj_t *args) {
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_fill_obj, 2, 3, s3lcd_fill);
-
 
 ///
 /// .pixel(x, y{, color, alpha})
@@ -493,7 +466,6 @@ static mp_obj_t s3lcd_pixel(size_t n_args, const mp_obj_t *args) {
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_pixel_obj, 4, 5, s3lcd_pixel);
-
 
 static void line(s3lcd_obj_t *self, int16_t x0, int16_t y0, int16_t x1, int16_t y1, int16_t color, uint8_t alpha) {
     bool steep = ABS(y1 - y0) > ABS(x1 - x0);
@@ -583,6 +555,112 @@ static mp_obj_t s3lcd_line(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_line_obj, 6, 7, s3lcd_line);
 
+static void transform(uint16_t *src, transform_descriptor_t *descriptor) {
+    mp_float_t fsin = MICROPY_FLOAT_C_FUN(sin)(descriptor->angle);
+    mp_float_t fcos = MICROPY_FLOAT_C_FUN(cos)(descriptor->angle);
+    mp_float_t fabs_x = fabsf(descriptor->scale_x);
+    mp_float_t fabs_y = fabsf(descriptor->scale_y);
+    bool flip_x = descriptor->scale_x < 0;
+    bool flip_y = descriptor->scale_y < 0;
+
+    bool is_rotation = fcos < 1;
+    bool is_scale = (fabs_x > 0 && (fabs_x > 1 || fabs_x < 1)) || (fabs_y > 0 && (fabs_y > 1 || fabs_y < 1));
+    if (!is_rotation && !is_scale && !flip_x && !flip_y)
+        return;
+
+    uint16_t width = descriptor->width;
+    uint16_t height = descriptor->height;
+
+    mp_float_t x0, y0;
+    mp_float_t x1 = 0;
+    mp_float_t y1 = 0;
+    mp_float_t xdx = 1;
+    mp_float_t xdy = 0;
+    mp_float_t ydx = 0;
+    mp_float_t ydy = 1;
+    uint16_t rotate_width = width;
+    uint16_t rotate_height = height;
+    if (is_rotation) {
+        rotate_width = (uint16_t)(fabsf(width * fcos) + fabsf(height * fsin) + 0.5);
+        rotate_height = (uint16_t)(fabsf(height * fcos) + fabsf(width * fsin) + 0.5);
+
+        mp_float_t x2, y2, x3, y3;
+        x0 = (width - rotate_width * fcos - rotate_height * fsin) / 2;
+        y0 = (height + rotate_width * fsin - rotate_height * fcos) / 2;
+        x1 = x0 + 0 * fcos + 0 * fsin;
+        y1 = y0 + 0 * fcos - 0 * fsin;
+        x2 = x0 + rotate_width * fcos + 0 * fsin;
+        y2 = y0 + 0 * fcos - rotate_width * fsin;
+        x3 = x0 + 0 * fcos + rotate_height * fsin;
+        y3 = y0 + rotate_height * fcos - 0 * fsin;
+
+        xdx = (x2 - x1) / rotate_width;
+        xdy = (y2 - y1) / rotate_width;
+        ydx = (x3 - x1) / rotate_height;
+        ydy = (y3 - y1) / rotate_height;
+    }
+
+    uint16_t scale_width = rotate_width;
+    uint16_t scale_height = rotate_height;
+    if (is_scale) {
+        scale_width = (uint16_t)(rotate_width * fabs_x) + 1;
+        scale_height = (uint16_t)(rotate_height * fabs_y) + 1;
+    }
+
+    descriptor->top = scale_width;
+    descriptor->left = scale_height;
+    descriptor->right = descriptor->bottom = 0;
+
+    size_t bufsize = scale_width * scale_height * 2;
+    descriptor->buf = m_malloc(bufsize);
+    memset(descriptor->buf, 0, bufsize);
+
+    size_t i;
+    uint16_t x, y, dx, dy, sx, sy;
+
+    for (sy = 0; sy < scale_height; sy++) {
+        for (sx = 0; sx < scale_width; sx++) {
+            dx = (uint16_t)(sx / fabs_x + 0.5);
+            dy = (uint16_t)(sy / fabs_y + 0.5);
+            x = (uint16_t)(x1 + dy * ydx + dx * xdx + 0.5);
+            y = (uint16_t)(y1 + dy * ydy + dx * xdy + 0.5);
+            i = sy * scale_width + sx;
+            if ((x < width) && (y < height)) {
+                if (flip_x)
+                    x = width - x;
+                if (flip_y)
+                    y = height - y;
+                descriptor->buf[i] = src[y * width + x];
+            }
+            if (descriptor->buf[i] != 0) {
+                if (sy < descriptor->top)
+                    descriptor->top = sy;
+                if (sx < descriptor->left)
+                    descriptor->left = sx;
+                if (sx > descriptor->right)
+                    descriptor->right = sx;
+                if (sy > descriptor->bottom)
+                    descriptor->bottom = sy;
+            }
+        }
+    }
+
+    uint16_t cx, cy;
+    x0 = (rotate_width - width * fcos + height * fsin) / 2;
+    y0 = (rotate_height - width * fsin - height * fcos) / 2;
+    cx = (uint16_t)((x0 + descriptor->cx * fcos - descriptor->cy * fsin + 1) * fabs_x);
+    cy = (uint16_t)((y0 + descriptor->cx * fsin + descriptor->cy * fcos + 1) * fabs_y);
+    if (flip_x)
+        cx = scale_width - cx;
+    if (flip_y)
+        cy = scale_height - cy;
+
+    descriptor->width = scale_width;
+    descriptor->height = scale_height;
+    descriptor->cx = cx;
+    descriptor->cy = cy;
+}
+
 ///
 /// .blit_buffer(buffer, x, y, width, height {,alpha})
 /// Draw a buffer to the screen.
@@ -593,6 +671,11 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_line_obj, 6, 7, s3lcd_line);
 /// -- width: width of the image
 /// -- height: height of the image
 /// optional parameters:
+/// -- cx: center x
+/// -- cy: center y
+/// -- angle: radians angle
+/// -- scale_x: scale_x
+/// -- scale_y: scale_y
 /// -- key: transparent color
 /// -- alpha defaults to 255
 ///
@@ -605,24 +688,55 @@ static mp_obj_t s3lcd_blit_buffer(size_t n_args, const mp_obj_t *args) {
     mp_int_t y = mp_obj_get_int(args[3]);
     mp_int_t w = mp_obj_get_int(args[4]);
     mp_int_t h = mp_obj_get_int(args[5]);
-    OPTIONAL_ARG(6, mp_int_t, mp_obj_get_int, key, -1)
-    OPTIONAL_ARG(7, mp_int_t, mp_obj_get_int, alpha, 255)
+    OPTIONAL_ARG(6, mp_int_t, mp_obj_get_int, cx, 0);
+    OPTIONAL_ARG(7, mp_int_t, mp_obj_get_int, cy, 0);
+    OPTIONAL_ARG(8, mp_float_t, mp_obj_get_float, angle, 0.0);
+    OPTIONAL_ARG(9, mp_float_t, mp_obj_get_float, scale_x, 1.0);
+    OPTIONAL_ARG(10, mp_float_t, mp_obj_get_float, scale_y, 1.0);
+    OPTIONAL_ARG(11, mp_int_t, mp_obj_get_int, key, -1)
+    OPTIONAL_ARG(12, mp_int_t, mp_obj_get_int, alpha, 255)
 
     uint16_t *src = buf_info.buf;
+
+    x += cx;
+    y += cy;
+
+    transform_descriptor_t descriptor;
+    descriptor.buf = NULL;
+    descriptor.width = w;
+    descriptor.height = h;
+    descriptor.cx = cx;
+    descriptor.cy = cy;
+    descriptor.angle = angle;
+    descriptor.scale_x = scale_x;
+    descriptor.scale_y = scale_y;
+    descriptor.top = 0;
+    descriptor.left = 0;
+    descriptor.right = w;
+    descriptor.bottom = h;
+
+    transform(src, &descriptor);
+
+    if (descriptor.buf != NULL)
+        src = descriptor.buf;
+
+    x -= descriptor.cx;
+    y -= descriptor.cy;
+    w = descriptor.width;
+    h = descriptor.height;
+
     uint16_t *dst = *(self->frame_buffer) + y * self->width + x;
     int16_t stride = self->width - w;
 
     for (int yy = 0; yy < h; yy++) {
         for (int xx = 0; xx < w; xx++) {
-            if (xx+x < 0 || xx+x >= self->width || yy+y < 0 || yy+y >= self->height) {
+            if (xx + x < 0 || xx + x >= self->width || yy + y < 0 || yy + y >= self->height) {
                 src++;
                 dst++;
-            }
-            else if (*src == key) {
+            } else if (*src == key) {
                 src++;
                 dst++;
-            }
-            else {
+            } else {
                 *dst = alpha_blend_565(*src, *dst, alpha);
                 src++;
                 dst++;
@@ -631,9 +745,16 @@ static mp_obj_t s3lcd_blit_buffer(size_t n_args, const mp_obj_t *args) {
         dst += stride;
     }
 
-    return mp_const_none;
+    if (descriptor.buf != NULL) {
+        m_free(descriptor.buf);
+        descriptor.buf = NULL;
+    }
+
+    mp_obj_t result[4] = {mp_obj_new_int(descriptor.top), mp_obj_new_int(descriptor.left),
+                          mp_obj_new_int(descriptor.right), mp_obj_new_int(descriptor.bottom)};
+    return mp_obj_new_tuple(4, result);
 }
-static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_blit_buffer_obj, 6, 8, s3lcd_blit_buffer);
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_blit_buffer_obj, 6, 13, s3lcd_blit_buffer);
 
 ///
 /// .draw(font, string|int, x, y, {color , scale, alpha})
@@ -746,8 +867,8 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_draw_obj, 5, 8, s3lcd_draw);
 
 ///
 /// .draw_len(font, string|int {, scale})
-/// Returns the width of the string in pixels if drawn with the given font and scale (default 1).
-/// required parameters:
+/// Returns the width of the string in pixels if drawn with the given font and
+/// scale (default 1). required parameters:
 /// -- font: a font module
 /// -- string: a string or a single character
 /// optional parameters:
@@ -834,8 +955,8 @@ static mp_obj_t dict_lookup(mp_obj_t self_in, mp_obj_t index) {
 
 ///
 /// .write_len(font, string)
-/// return the width in pixels of the string or character if written with a font.
-/// required parameters:
+/// return the width in pixels of the string or character if written with a
+/// font. required parameters:
 /// -- font: a font module
 /// -- string: a string or a single character
 ///
@@ -948,20 +1069,20 @@ static mp_obj_t s3lcd_write(size_t n_args, const mp_obj_t *args) {
 
                 bs_bit = 0;
                 switch (offset_width) {
-                    case 1:
-                        bs_bit = offsets_data[char_index * offset_width];
-                        break;
+                case 1:
+                    bs_bit = offsets_data[char_index * offset_width];
+                    break;
 
-                    case 2:
-                        bs_bit = (offsets_data[char_index * offset_width] << 8) +
-                            (offsets_data[char_index * offset_width + 1]);
-                        break;
+                case 2:
+                    bs_bit =
+                        (offsets_data[char_index * offset_width] << 8) + (offsets_data[char_index * offset_width + 1]);
+                    break;
 
-                    case 3:
-                        bs_bit = (offsets_data[char_index * offset_width] << 16) +
-                            (offsets_data[char_index * offset_width + 1] << 8) +
-                            (offsets_data[char_index * offset_width + 2]);
-                        break;
+                case 3:
+                    bs_bit = (offsets_data[char_index * offset_width] << 16) +
+                             (offsets_data[char_index * offset_width + 1] << 8) +
+                             (offsets_data[char_index * offset_width + 2]);
+                    break;
                 }
 
                 for (int yy = 0; yy < height; yy++) {
@@ -1148,7 +1269,7 @@ static mp_obj_t s3lcd_text(size_t n_args, const mp_obj_t *args) {
         source = &single_char_s;
         source_len = 1;
     } else if (mp_obj_is_str(args[2])) {
-        source = (uint8_t *) mp_obj_str_get_str(args[2]);
+        source = (uint8_t *)mp_obj_str_get_str(args[2]);
         source_len = strlen((char *)source);
     } else if (mp_obj_is_type(args[2], &mp_type_bytes)) {
         mp_obj_t text_data_buff = args[2];
@@ -1238,7 +1359,8 @@ static void set_rotation(s3lcd_obj_t *self) {
 /// .rotation(rotation)
 /// Set the display rotation.
 /// required parameters:
-/// -- rotation: 0=Portrait, 1=Landscape, 2=Reverse Portrait (180), 3=Reverse Landscape (180)
+/// -- rotation: 0=Portrait, 1=Landscape, 2=Reverse Portrait (180), 3=Reverse
+/// Landscape (180)
 ///
 
 static mp_obj_t s3lcd_rotation(mp_obj_t self_in, mp_obj_t value) {
@@ -1320,9 +1442,10 @@ static bool lcd_panel_done(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_
 /// .scroll(xstep, ystep{, fill=0})
 /// Scroll the framebuffer in the given direction.
 /// required parameters:
-/// -- xstep: Number of pixels to scroll in the x direction. Negative values scroll left, positive values scroll right.
-/// -- ystep: Number of pixels to scroll in the y direction. Negative values scroll up, positive values scroll down.
-/// optional parameters:
+/// -- xstep: Number of pixels to scroll in the x direction. Negative values
+/// scroll left, positive values scroll right.
+/// -- ystep: Number of pixels to scroll in the y direction. Negative values
+/// scroll up, positive values scroll down. optional parameters:
 /// -- fill: Fill color for the new pixels.
 ///
 /// Based on the MicroPython framedbuffer scroll function.
@@ -1400,7 +1523,8 @@ static void custom_init(s3lcd_obj_t *self) {
         if (mp_get_buffer(init_cmd[0], &init_cmd_data_info, MP_BUFFER_READ)) {
             uint8_t *init_cmd_data = (uint8_t *)init_cmd_data_info.buf;
             if (init_cmd_data_info.len > 1) {
-                esp_lcd_panel_io_tx_param(self->io_handle, init_cmd_data[0], &init_cmd_data[1], init_cmd_data_info.len - 1);
+                esp_lcd_panel_io_tx_param(self->io_handle, init_cmd_data[0], &init_cmd_data[1],
+                                          init_cmd_data_info.len - 1);
             } else {
                 esp_lcd_panel_io_tx_param(self->io_handle, init_cmd_data[0], NULL, 0);
             }
@@ -1415,7 +1539,6 @@ static void custom_init(s3lcd_obj_t *self) {
         }
     }
 }
-
 
 ///
 /// .init()
@@ -1433,59 +1556,58 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
         esp_lcd_i80_bus_config_t bus_config = {
             .dc_gpio_num = config->dc_gpio_num,
             .wr_gpio_num = config->wr_gpio_num,
-            .clk_src = LCD_CLK_SRC_PLL160M, // same as default in IDF5 and 0 in the enum of IDF4.4
-            .data_gpio_nums = {
-                config->data_gpio_nums[0],
-                config->data_gpio_nums[1],
-                config->data_gpio_nums[2],
-                config->data_gpio_nums[3],
-                config->data_gpio_nums[4],
-                config->data_gpio_nums[5],
-                config->data_gpio_nums[6],
-                config->data_gpio_nums[7],
-            },
+            .clk_src = LCD_CLK_SRC_PLL160M, // same as default in IDF5 and 0 in the
+                                            // enum of IDF4.4
+            .data_gpio_nums =
+                {
+                    config->data_gpio_nums[0],
+                    config->data_gpio_nums[1],
+                    config->data_gpio_nums[2],
+                    config->data_gpio_nums[3],
+                    config->data_gpio_nums[4],
+                    config->data_gpio_nums[5],
+                    config->data_gpio_nums[6],
+                    config->data_gpio_nums[7],
+                },
             .bus_width = config->bus_width,
             .max_transfer_bytes = self->dma_buffer_size,
         };
 
         ESP_ERROR_CHECK(esp_lcd_new_i80_bus(&bus_config, &self->bus_handle.i80));
         esp_lcd_panel_io_handle_t io_handle = NULL;
-        esp_lcd_panel_io_i80_config_t io_config = {
-            .cs_gpio_num = config->cs_gpio_num,
-            .pclk_hz = config->pclk_hz,
-            .trans_queue_depth = 10,
-            .on_color_trans_done = lcd_panel_done,
-            .user_ctx = self,
-            .dc_levels = {
-                .dc_idle_level = config->dc_levels.dc_idle_level,
-                .dc_cmd_level = config->dc_levels.dc_cmd_level,
-                .dc_dummy_level = config->dc_levels.dc_dummy_level,
-                .dc_data_level = config->dc_levels.dc_data_level,
-            },
-            .lcd_cmd_bits = config->lcd_cmd_bits,
-            .lcd_param_bits = config->lcd_param_bits,
-            .flags = {
-                .cs_active_high = config->flags.cs_active_high,
-                .reverse_color_bits = config->flags.reverse_color_bits,
-                .swap_color_bytes = config->flags.swap_color_bytes,
-                .pclk_active_neg = config->flags.pclk_active_neg,
-                .pclk_idle_low = config->flags.pclk_idle_low,
-            }
-        };
+        esp_lcd_panel_io_i80_config_t io_config = {.cs_gpio_num = config->cs_gpio_num,
+                                                   .pclk_hz = config->pclk_hz,
+                                                   .trans_queue_depth = 10,
+                                                   .on_color_trans_done = lcd_panel_done,
+                                                   .user_ctx = self,
+                                                   .dc_levels =
+                                                       {
+                                                           .dc_idle_level = config->dc_levels.dc_idle_level,
+                                                           .dc_cmd_level = config->dc_levels.dc_cmd_level,
+                                                           .dc_dummy_level = config->dc_levels.dc_dummy_level,
+                                                           .dc_data_level = config->dc_levels.dc_data_level,
+                                                       },
+                                                   .lcd_cmd_bits = config->lcd_cmd_bits,
+                                                   .lcd_param_bits = config->lcd_param_bits,
+                                                   .flags = {
+                                                       .cs_active_high = config->flags.cs_active_high,
+                                                       .reverse_color_bits = config->flags.reverse_color_bits,
+                                                       .swap_color_bytes = config->flags.swap_color_bytes,
+                                                       .pclk_active_neg = config->flags.pclk_active_neg,
+                                                       .pclk_idle_low = config->flags.pclk_idle_low,
+                                                   }};
 
         ESP_ERROR_CHECK(esp_lcd_new_panel_io_i80(self->bus_handle.i80, &io_config, &io_handle));
         self->io_handle = io_handle;
     } else if (mp_obj_is_type(self->bus, &s3lcd_spi_bus_type)) {
         s3lcd_spi_bus_obj_t *config = MP_OBJ_TO_PTR(self->bus);
         self->swap_color_bytes = config->flags.swap_color_bytes;
-        spi_bus_config_t buscfg = {
-            .sclk_io_num = config->sclk_io_num,
-            .mosi_io_num = config->mosi_io_num,
-            .miso_io_num = -1,
-            .quadwp_io_num = -1,
-            .quadhd_io_num = -1,
-            .max_transfer_sz = self->dma_buffer_size
-        };
+        spi_bus_config_t buscfg = {.sclk_io_num = config->sclk_io_num,
+                                   .mosi_io_num = config->mosi_io_num,
+                                   .miso_io_num = -1,
+                                   .quadwp_io_num = -1,
+                                   .quadhd_io_num = -1,
+                                   .max_transfer_sz = self->dma_buffer_size};
         ESP_ERROR_CHECK(spi_bus_initialize(config->spi_host, &buscfg, SPI_DMA_CH_AUTO));
         esp_lcd_panel_io_handle_t io_handle = NULL;
         esp_lcd_panel_io_spi_config_t io_config = {
@@ -1502,7 +1624,7 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
             .flags.dc_as_cmd_phase = config->flags.dc_as_cmd_phase,
 #endif
             .flags.dc_low_on_data = config->flags.dc_low_on_data,
-            .flags.octal_mode =config->flags.octal_mode,
+            .flags.octal_mode = config->flags.octal_mode,
             .flags.lsb_first = config->flags.lsb_first
         };
 
@@ -1524,7 +1646,8 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
     if (self->custom_init == MP_OBJ_NULL) {
         esp_lcd_panel_init(panel_handle);
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
-        esp_lcd_panel_disp_on_off(panel_handle,true); //switch lcd on, not longer a part of init
+        esp_lcd_panel_disp_on_off(panel_handle,
+                                  true); // switch lcd on, not longer a part of init
 #endif
     } else {
         custom_init(self);
@@ -1544,14 +1667,8 @@ static mp_obj_t s3lcd_init(mp_obj_t self_in) {
 
     self->render_queue = xQueueCreate(1, sizeof(render_descriptor_t));
 
-    if (xTaskCreatePinnedToCore(
-        task_for_render,
-        "s3lcd_render",
-        RENDER_TASK_STACK_SIZE,
-        self,
-        RENDER_TASK_PRIORITY,
-        (TaskHandle_t *)&self->render_task,
-        RENDER_TASK_COREID) != pdPASS) {
+    if (xTaskCreatePinnedToCore(task_for_render, "s3lcd_render", RENDER_TASK_STACK_SIZE, self, RENDER_TASK_PRIORITY,
+                                (TaskHandle_t *)&self->render_task, RENDER_TASK_COREID) != pdPASS) {
 
         mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("failed to create render task"));
     }
@@ -1759,15 +1876,13 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_rect_obj, 5, 7, s3lcd_rect);
 ///
 
 static mp_obj_t s3lcd_color565(mp_obj_t r, mp_obj_t g, mp_obj_t b) {
-    return MP_OBJ_NEW_SMALL_INT(color565(
-        (uint8_t)mp_obj_get_int(r),
-        (uint8_t)mp_obj_get_int(g),
-        (uint8_t)mp_obj_get_int(b)));
+    return MP_OBJ_NEW_SMALL_INT(
+        color565((uint8_t)mp_obj_get_int(r), (uint8_t)mp_obj_get_int(g), (uint8_t)mp_obj_get_int(b)));
 }
 static MP_DEFINE_CONST_FUN_OBJ_3(s3lcd_color565_obj, s3lcd_color565);
 
-static void map_bitarray_to_rgb565(uint8_t const *bitarray, uint16_t *buffer, int length, int width,
-    uint16_t color, uint16_t bg_color) {
+static void map_bitarray_to_rgb565(uint8_t const *bitarray, uint16_t *buffer, int length, int width, uint16_t color,
+                                   uint16_t bg_color) {
     int row_pos = 0;
     for (int i = 0; i < length; i++) {
         uint8_t byte = bitarray[i];
@@ -1817,19 +1932,19 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_map_bitarray_to_rgb565_obj, 3, 
 
 // User defined device identifier
 typedef struct {
-    mp_file_t *fp;                      // File pointer for input function
-    uint8_t *fbuf;                      // Pointer to the frame buffer for output function
-    uint16_t wfbuf;                     // Width of the frame buffer [pix]
-    uint16_t left;                      // jpg crop left column
-    uint16_t top;                       // jpg crop top row
-    uint16_t right;                     // jpg crop right column
-    uint16_t bottom;                    // jpg crop bottom row
+    mp_file_t *fp;   // File pointer for input function
+    uint8_t *fbuf;   // Pointer to the frame buffer for output function
+    uint16_t wfbuf;  // Width of the frame buffer [pix]
+    uint16_t left;   // jpg crop left column
+    uint16_t top;    // jpg crop top row
+    uint16_t right;  // jpg crop right column
+    uint16_t bottom; // jpg crop bottom row
 
-    s3lcd_obj_t *self;                  // display object
+    s3lcd_obj_t *self; // display object
 
-    uint8_t *data;                      // Pointer to the input data
-    uint32_t dataIdx;                   // Index of the input data
-    uint32_t dataLen;                   // Length of the input data
+    uint8_t *data;    // Pointer to the input data
+    uint32_t dataIdx; // Index of the input data
+    uint32_t dataLen; // Length of the input data
 
 } IODEV;
 
@@ -1837,10 +1952,10 @@ typedef struct {
 // buffer input function
 //
 
-static unsigned int buffer_in_func(     // Returns number of bytes read (zero on error)
-    JDEC *jd,                           // Decompression object
-    uint8_t *buff,                      // Pointer to the read buffer (null to remove data)
-    unsigned int nbyte) {               // Number of bytes to read/remove
+static unsigned int buffer_in_func( // Returns number of bytes read (zero on error)
+    JDEC *jd,                       // Decompression object
+    uint8_t *buff,                  // Pointer to the read buffer (null to remove data)
+    unsigned int nbyte) {           // Number of bytes to read/remove
     IODEV *dev = (IODEV *)jd->device;
 
     if (dev->dataIdx + nbyte > dev->dataLen) {
@@ -1855,19 +1970,19 @@ static unsigned int buffer_in_func(     // Returns number of bytes read (zero on
     return nbyte;
 }
 
-
 //
 // file input function
 //
 
-static unsigned int file_in_func(           // Returns number of bytes read (zero on error)
-    JDEC *jd,                               // Decompression object
-    uint8_t *buff,                          // Pointer to the read buffer (null to remove data)
-    unsigned int nbyte) {                   // Number of bytes to read/remove
-    IODEV *dev = (IODEV *)jd->device;       // Device identifier for the session (5th argument of jd_prepare function)
+static unsigned int file_in_func(     // Returns number of bytes read (zero on error)
+    JDEC *jd,                         // Decompression object
+    uint8_t *buff,                    // Pointer to the read buffer (null to remove data)
+    unsigned int nbyte) {             // Number of bytes to read/remove
+    IODEV *dev = (IODEV *)jd->device; // Device identifier for the session (5th
+                                      // argument of jd_prepare function)
     unsigned int nread;
 
-    if (buff) {                             // Read data from input stream
+    if (buff) { // Read data from input stream
         nread = (unsigned int)mp_readinto(dev->fp, buff, nbyte);
         return nread;
     }
@@ -1881,19 +1996,20 @@ static unsigned int file_in_func(           // Returns number of bytes read (zer
 // jpg output function
 //
 
-static int jpg_out(                                         // 1:Ok, 0:Aborted
-    JDEC *jd,                                               // Decompression object
-    void *bitmap,                                           // Bitmap data to be output
-    JRECT *rect) {                                          // Rectangular region of output image
+static int jpg_out( // 1:Ok, 0:Aborted
+    JDEC *jd,       // Decompression object
+    void *bitmap,   // Bitmap data to be output
+    JRECT *rect) {  // Rectangular region of output image
     IODEV *dev = (IODEV *)jd->device;
     uint16_t wd = dev->wfbuf;
     uint16_t ws = rect->right - rect->left + 1;
     // uint16_t stride = wd - ws;
 
     // Copy the decompressed RGB rectangular to the frame buffer (assuming RGB565)
-    uint16_t *src = (uint16_t *) bitmap;
-    // uint16_t *dst = (uint16_t *) dev->fbuf + ((rect->top + jd->y_offs) * dev->wfbuf + rect->left + jd->x_offs);
-    uint16_t *dst = (uint16_t *) dev->fbuf;
+    uint16_t *src = (uint16_t *)bitmap;
+    // uint16_t *dst = (uint16_t *) dev->fbuf + ((rect->top + jd->y_offs) *
+    // dev->wfbuf + rect->left + jd->x_offs);
+    uint16_t *dst = (uint16_t *)dev->fbuf;
 
     uint8_t zoomin = jd->zoomin;
     if (zoomin == 0) {
@@ -1904,17 +2020,17 @@ static int jpg_out(                                         // 1:Ok, 0:Aborted
     int dx, dy, j;
     for (int ry = rect->top; ry <= rect->bottom; ry++) {
         y = ry - rect->top;
-        dy = (ry*zoomin)+jd->y_offs;
+        dy = (ry * zoomin) + jd->y_offs;
         i = y * ws;
         j = dy * wd;
         for (int rx = rect->left; rx <= rect->right; rx++) {
             x = rx - rect->left;
-            dx = (rx*zoomin)+jd->x_offs;
+            dx = (rx * zoomin) + jd->x_offs;
             for (int row = 0; row < zoomin; row++) {
-                if ((dy+row) >= 0 && (dy+row) < dev->self->height) {
+                if ((dy + row) >= 0 && (dy + row) < dev->self->height) {
                     for (int col = 0; col < zoomin; col++) {
-                        if ((dx+col) >= 0 && (dx+col) < dev->self->width) {
-                            dst[j+(wd*row)+dx+col] = src[i+x];
+                        if ((dx + col) >= 0 && (dx + col) < dev->self->width) {
+                            dst[j + (wd * row) + dx + col] = src[i + x];
                         }
                     }
                 }
@@ -1924,7 +2040,8 @@ static int jpg_out(                                         // 1:Ok, 0:Aborted
 
     // for (int y = rect->top; y <= rect->bottom; y++) {
     //     for (int x = rect->left; x <= rect->right; x++) {
-    //         if ( x+jd->x_offs < 0 || x+jd->x_offs >= dev->self->width || y+jd->y_offs < 0 || y+jd->y_offs >= dev->self->height) {
+    //         if ( x+jd->x_offs < 0 || x+jd->x_offs >= dev->self->width ||
+    //         y+jd->y_offs < 0 || y+jd->y_offs >= dev->self->height) {
     //             src++;
     //             dst++;
     //         }
@@ -1953,10 +2070,10 @@ static mp_obj_t s3lcd_jpg(size_t n_args, const mp_obj_t *args) {
     mp_int_t y = mp_obj_get_int(args[3]);
     OPTIONAL_ARG(4, mp_int_t, mp_obj_get_int, zoomin, 1)
 
-    JRESULT res;                                    // Result code of TJpgDec API
-    JDEC jdec;                                      // Decompression object
-    IODEV devid;                                    // User defined device identifier
-    self->work = (void *)m_malloc(3100);            // Pointer to the work area
+    JRESULT res;                         // Result code of TJpgDec API
+    JDEC jdec;                           // Decompression object
+    IODEV devid;                         // User defined device identifier
+    self->work = (void *)m_malloc(3100); // Pointer to the work area
     static unsigned int (*input_func)(JDEC *, uint8_t *, unsigned int) = NULL;
 
     if (mp_obj_is_type(args[1], &mp_type_bytes)) {
@@ -1988,7 +2105,7 @@ static mp_obj_t s3lcd_jpg(size_t n_args, const mp_obj_t *args) {
             devid.fbuf = (uint8_t *)fb;
             devid.wfbuf = self->width;
             devid.self = self;
-            res = jd_decomp(&jdec, jpg_out, 0);     // Start to decompress with 1/1 scaling
+            res = jd_decomp(&jdec, jpg_out, 0); // Start to decompress with 1/1 scaling
             if (res != JDR_OK) {
                 mp_raise_msg_varg(&mp_type_RuntimeError, MP_ERROR_TEXT("jpg decompress failed: %d."), res);
             }
@@ -2000,7 +2117,7 @@ static mp_obj_t s3lcd_jpg(size_t n_args, const mp_obj_t *args) {
             self->fp = MP_OBJ_NULL;
         }
     }
-    m_free(self->work);     // Discard work area
+    m_free(self->work); // Discard work area
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_jpg_obj, 4, 5, s3lcd_jpg);
@@ -2009,16 +2126,13 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_jpg_obj, 4, 5, s3lcd_jpg);
 // output function for jpg_decode
 //
 
-static int out_crop(                                // 1:Ok, 0:Aborted
-    JDEC *jd,                                       // Decompression object
-    void *bitmap,                                   // Bitmap data to be output
-    JRECT *rect) {                                  // Rectangular region of output image
+static int out_crop( // 1:Ok, 0:Aborted
+    JDEC *jd,        // Decompression object
+    void *bitmap,    // Bitmap data to be output
+    JRECT *rect) {   // Rectangular region of output image
     IODEV *dev = (IODEV *)jd->device;
 
-    if (dev->left <= rect->right &&
-        dev->right >= rect->left &&
-        dev->top <= rect->bottom &&
-        dev->bottom >= rect->top) {
+    if (dev->left <= rect->right && dev->right >= rect->left && dev->top <= rect->bottom && dev->bottom >= rect->top) {
         uint16_t left = MAX(dev->left, rect->left);
         uint16_t top = MAX(dev->top, rect->top);
         uint16_t right = MIN(dev->right, rect->right);
@@ -2029,20 +2143,17 @@ static int out_crop(                                // 1:Ok, 0:Aborted
         uint16_t row;
 
         for (row = top; row <= bottom; row++) {
-            memcpy(
-                (uint16_t *)dev->fbuf + ((row - dev->top) * dev_width) + left - dev->left,
-                (uint16_t *)bitmap + ((row - rect->top) * rect_width) + left - rect->left,
-                width);
+            memcpy((uint16_t *)dev->fbuf + ((row - dev->top) * dev_width) + left - dev->left,
+                   (uint16_t *)bitmap + ((row - rect->top) * rect_width) + left - rect->left, width);
         }
     }
-    return 1;   // Continue to decompress
+    return 1; // Continue to decompress
 }
 
 ///
 /// .jpg_decode(filename {, x, y, width, height})
-/// Decode a jpg file and return it or a portion of it as a tuple containing a blittable buffer,
-/// the width and height of the buffer.
-/// required parameters:
+/// Decode a jpg file and return it or a portion of it as a tuple containing a
+/// blittable buffer, the width and height of the buffer. required parameters:
 /// -- filename: filename
 /// optional parameters:
 /// -- x: x
@@ -2061,10 +2172,10 @@ static mp_obj_t s3lcd_jpg_decode(size_t n_args, const mp_obj_t *args) {
         OPTIONAL_ARG(4, mp_int_t, mp_obj_get_int, width, -1)
         OPTIONAL_ARG(5, mp_int_t, mp_obj_get_int, height, -1)
 
-        self->work = (void *)m_malloc(3100);        // Pointer to the work area
-        JRESULT res;                                // Result code of TJpgDec API
-        JDEC jdec;                                  // Decompression object
-        IODEV devid;                                // User defined device identifier
+        self->work = (void *)m_malloc(3100); // Pointer to the work area
+        JRESULT res;                         // Result code of TJpgDec API
+        JDEC jdec;                           // Decompression object
+        IODEV devid;                         // User defined device identifier
         size_t bufsize = 0;
         static unsigned int (*input_func)(JDEC *, uint8_t *, unsigned int) = NULL;
 
@@ -2134,13 +2245,10 @@ static mp_obj_t s3lcd_jpg_decode(size_t n_args, const mp_obj_t *args) {
                 self->fp = MP_OBJ_NULL;
             }
 
-            m_free(self->work);                         // Discard work area
+            m_free(self->work); // Discard work area
 
-            mp_obj_t result[3] = {
-                mp_obj_new_bytearray(bufsize, (mp_obj_t *)self->work_buffer),
-                mp_obj_new_int(width),
-                mp_obj_new_int(height)
-            };
+            mp_obj_t result[3] = {mp_obj_new_bytearray(bufsize, (mp_obj_t *)self->work_buffer), mp_obj_new_int(width),
+                                  mp_obj_new_int(height)};
 
             return mp_obj_new_tuple(3, result);
             self->work_buffer = NULL;
@@ -2159,16 +2267,16 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_jpg_decode_obj, 2, 6, s3lcd_jpg
 
 typedef struct _PNG_USER_DATA {
     s3lcd_obj_t *self;
-    int16_t top;                                   // draw png starting at this row
-    int16_t left;                                  // draw png starting at this column
-    int16_t fg_color;                              // override foreground color
+    int16_t top;      // draw png starting at this row
+    int16_t left;     // draw png starting at this column
+    int16_t fg_color; // override foreground color
 } PNG_USER_DATA;
 
 void pngle_on_draw(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint8_t rgba[4]) {
     PNG_USER_DATA *user_data = pngle_get_user_data(pngle);
     s3lcd_obj_t *self = user_data->self;
 
-    if ( x+user_data->left >= self->width || y+user_data->top >= self->height) {
+    if (x + user_data->left >= self->width || y + user_data->top >= self->height) {
         return;
     }
 
@@ -2193,7 +2301,7 @@ void pngle_on_bitmap(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_
         }
     }
 
-    if ( x >= width || y >= height) {
+    if (x >= width || y >= height) {
         return;
     }
     if (x + w > width) {
@@ -2242,9 +2350,7 @@ static mp_obj_t s3lcd_png(size_t n_args, const mp_obj_t *args) {
     char *buf = (char *)self->dma_buffer; // Reuse the dma_buffer
     int len, remain = 0;
 
-    PNG_USER_DATA user_data = {
-        self, y, x
-    };
+    PNG_USER_DATA user_data = {self, y, x};
 
     // allocate new pngle_t and store in self to protect memory from gc
     self->work = pngle_new(self);
@@ -2265,7 +2371,8 @@ static mp_obj_t s3lcd_png(size_t n_args, const mp_obj_t *args) {
         while ((len = mp_readinto(self->fp, buf + remain, self->dma_buffer_size - remain)) > 0) {
             int fed = pngle_feed(pngle, buf, remain + len);
             if (fed < 0) {
-                mp_raise_msg_varg(&mp_type_RuntimeError, MP_ERROR_TEXT("png decompress failed: %s"), pngle_error(pngle));
+                mp_raise_msg_varg(&mp_type_RuntimeError, MP_ERROR_TEXT("png decompress failed: %s"),
+                                  pngle_error(pngle));
             }
             remain = remain + len - fed;
             if (remain > 0) {
@@ -2293,9 +2400,7 @@ static mp_obj_t s3lcd_png_decode(size_t n_args, const mp_obj_t *args) {
     char *buf = (char *)self->dma_buffer; // Reuse the dma_buffer
     int len, remain = 0;
 
-    PNG_USER_DATA user_data = {
-        self
-    };
+    PNG_USER_DATA user_data = {self};
 
     self->work_buffer = NULL;
 
@@ -2318,7 +2423,8 @@ static mp_obj_t s3lcd_png_decode(size_t n_args, const mp_obj_t *args) {
         while ((len = mp_readinto(self->fp, buf + remain, self->dma_buffer_size - remain)) > 0) {
             int fed = pngle_feed(pngle, buf, remain + len);
             if (fed < 0) {
-                mp_raise_msg_varg(&mp_type_RuntimeError, MP_ERROR_TEXT("png decompress failed: %s"), pngle_error(pngle));
+                mp_raise_msg_varg(&mp_type_RuntimeError, MP_ERROR_TEXT("png decompress failed: %s"),
+                                  pngle_error(pngle));
             }
             remain = remain + len - fed;
             if (remain > 0) {
@@ -2335,11 +2441,8 @@ static mp_obj_t s3lcd_png_decode(size_t n_args, const mp_obj_t *args) {
     pngle_destroy(pngle);
     self->work = NULL;
 
-    mp_obj_t result[3] = {
-        mp_obj_new_bytearray(bufsize, (mp_obj_t *)self->work_buffer),
-        mp_obj_new_int(width),
-        mp_obj_new_int(height)
-    };
+    mp_obj_t result[3] = {mp_obj_new_bytearray(bufsize, (mp_obj_t *)self->work_buffer), mp_obj_new_int(width),
+                          mp_obj_new_int(height)};
 
     return mp_obj_new_tuple(3, result);
     self->work_buffer = NULL;
@@ -2351,24 +2454,18 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_png_decode_obj, 2, 2, s3lcd_png
 //
 
 int32_t pngWrite(PNGFILE *pFile, uint8_t *pBuf, int32_t iLen) {
-    return mp_write((mp_file_t *) pFile->fHandle,  pBuf, iLen);
+    return mp_write((mp_file_t *)pFile->fHandle, pBuf, iLen);
 }
 
 int32_t pngRead(PNGFILE *pFile, uint8_t *pBuf, int32_t iLen) {
-    return mp_readinto((mp_file_t *) pFile->fHandle, pBuf, iLen);
+    return mp_readinto((mp_file_t *)pFile->fHandle, pBuf, iLen);
 }
 
-int32_t pngSeek(PNGFILE *pFile, int32_t iPosition) {
-    return mp_seek((mp_file_t *) pFile->fHandle, iPosition, SEEK_SET);
-}
+int32_t pngSeek(PNGFILE *pFile, int32_t iPosition) { return mp_seek((mp_file_t *)pFile->fHandle, iPosition, SEEK_SET); }
 
-void *pngOpen(const char *szFilename) {
-    return (void *)mp_open(szFilename, "w+b");
-}
+void *pngOpen(const char *szFilename) { return (void *)mp_open(szFilename, "w+b"); }
 
-void pngClose(PNGFILE *pFile) {
-    mp_close((mp_file_t *) pFile->fHandle);
-}
+void pngClose(PNGFILE *pFile) { mp_close((mp_file_t *)pFile->fHandle); }
 
 //
 // .png_write(file_name{ x, y, width, height})
@@ -2400,16 +2497,15 @@ static mp_obj_t s3lcd_png_write(size_t n_args, const mp_obj_t *args) {
         OPTIONAL_ARG(4, mp_int_t, mp_obj_get_int, width, self->width)
         OPTIONAL_ARG(5, mp_int_t, mp_obj_get_int, height, self->height)
 
-        if (x >= 0 && x + width <= self->width &&
-            y >= 0 && y + height <= self->height) {
+        if (x >= 0 && x + width <= self->width && y >= 0 && y + height <= self->height) {
 
-            PNGIMAGE *pPNG = (PNGIMAGE *) m_malloc(sizeof(PNGIMAGE));
+            PNGIMAGE *pPNG = (PNGIMAGE *)m_malloc(sizeof(PNGIMAGE));
             if (pPNG == NULL) {
                 mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("memory allocation failed"));
             }
             self->work = pPNG;
 
-            self->work_buffer = (uint16_t *) m_malloc(work_buffer_size);
+            self->work_buffer = (uint16_t *)m_malloc(work_buffer_size);
             if (self->work_buffer == NULL) {
                 mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("memory allocation failed"));
             }
@@ -2422,8 +2518,8 @@ static mp_obj_t s3lcd_png_write(size_t n_args, const mp_obj_t *args) {
             rc = PNG_encodeBegin(pPNG, width, height, PNG_PIXEL_TRUECOLOR, 24, NULL, 9);
             if (rc == PNG_SUCCESS) {
                 uint16_t *p = *(self->frame_buffer) + x + self->width * y;
-                for (int row = y; row <= y+height && rc == PNG_SUCCESS; row++) {
-                    rc = PNG_addRGB565Line(pPNG, p, self->work_buffer, row-y);
+                for (int row = y; row <= y + height && rc == PNG_SUCCESS; row++) {
+                    rc = PNG_addRGB565Line(pPNG, p, self->work_buffer, row - y);
                     p += self->width;
                 }
                 data_size = PNG_close(pPNG);
@@ -2501,8 +2597,7 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_polygon_center_obj, 2, 2, s3lcd
 
 static void RotatePolygon(Polygon *polygon, Point center, mp_float_t angle) {
     if (polygon->length == 0) {
-        return;                                     /* reject null polygons */
-
+        return; /* reject null polygons */
     }
     mp_float_t cosAngle = MICROPY_FLOAT_C_FUN(cos)(angle);
     mp_float_t sinAngle = MICROPY_FLOAT_C_FUN(sin)(angle);
@@ -2557,12 +2652,12 @@ static void PolygonFill(s3lcd_obj_t *self, Polygon *polygon, Point location, uin
             if ((polygon->points[i].y < pixelY && polygon->points[j].y >= pixelY) ||
                 (polygon->points[j].y < pixelY && polygon->points[i].y >= pixelY)) {
                 if (nodes < MAX_POLY_CORNERS) {
-                    nodeX[nodes++] = (int)(polygon->points[i].x +
-                        (pixelY - polygon->points[i].y) /
-                        (polygon->points[j].y - polygon->points[i].y) *
-                        (polygon->points[j].x - polygon->points[i].x));
+                    nodeX[nodes++] = (int)(polygon->points[i].x + (pixelY - polygon->points[i].y) /
+                                                                      (polygon->points[j].y - polygon->points[i].y) *
+                                                                      (polygon->points[j].x - polygon->points[i].x));
                 } else {
-                    mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("Polygon too complex increase MAX_POLY_CORNERS."));
+                    mp_raise_msg(&mp_type_RuntimeError,
+                                 MP_ERROR_TEXT("Polygon too complex increase MAX_POLY_CORNERS."));
                 }
             }
             j = i;
@@ -2598,7 +2693,8 @@ static void PolygonFill(s3lcd_obj_t *self, Polygon *polygon, Point location, uin
                     nodeX[i + 1] = maxX;
                 }
 
-                fast_hline(self, (int)location.x + nodeX[i], (int)location.y + pixelY, nodeX[i + 1] - nodeX[i] + 1, color, alpha);
+                fast_hline(self, (int)location.x + nodeX[i], (int)location.y + pixelY, nodeX[i + 1] - nodeX[i] + 1,
+                           color, alpha);
             }
         }
     }
@@ -2678,14 +2774,8 @@ static mp_obj_t s3lcd_polygon(size_t n_args, const mp_obj_t *args) {
             }
 
             for (int idx = 1; idx < poly_len; idx++) {
-                line(
-                    self,
-                    (int)point[idx - 1].x + x,
-                    (int)point[idx - 1].y + y,
-                    (int)point[idx].x + x,
-                    (int)point[idx].y + y,
-                    color,
-                    alpha);
+                line(self, (int)point[idx - 1].x + x, (int)point[idx - 1].y + y, (int)point[idx].x + x,
+                     (int)point[idx].y + y, color, alpha);
             }
 
             m_free(self->work);
@@ -2791,7 +2881,8 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_fill_polygon_obj, 4, 9, s3lcd_f
 //
 
 //
-// copy rows from the framebuffer to the dma buffer and send it to the display beginning at row.
+// copy rows from the framebuffer to the dma buffer and send it to the display
+// beginning at row.
 //
 //  self: s3lcd object
 //  src: pointer to the framebuffer
@@ -2800,10 +2891,10 @@ static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_fill_polygon_obj, 4, 9, s3lcd_f
 //  len: pixel data length to send
 
 unsigned char reverse(unsigned char b) {
-   b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
-   b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
-   b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
-   return b;
+    b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
+    b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
+    b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
+    return b;
 }
 
 void s3lcd_dma_display(s3lcd_obj_t *self, uint16_t *src, uint16_t row, uint16_t rows, size_t len) {
@@ -2812,10 +2903,9 @@ void s3lcd_dma_display(s3lcd_obj_t *self, uint16_t *src, uint16_t row, uint16_t 
         for (size_t i = 0; i < len; i++) {
             *dma_buffer++ = _swap_bytes(src[i]);
         }
-    } else{
-        memcpy(self->dma_buffer, src, len * 2);
+    } else {
+        memcpy(self->dma_buffer, src, len << 1);
     }
-
     lcd_panel_active = true;
     esp_lcd_panel_draw_bitmap(self->panel_handle, 0, row, self->width, row + rows, self->dma_buffer);
     while (lcd_panel_active) {
@@ -2840,7 +2930,8 @@ void task_for_render(void *self_in) {
 
             if (self->height % self->dma_rows != 0) {
                 size_t remaining = self->height % self->dma_rows;
-                s3lcd_dma_display(self, descriptor.framebuf, (self->height - remaining), remaining, remaining * self->width);
+                s3lcd_dma_display(self, descriptor.framebuf, (self->height - remaining), remaining,
+                                  remaining * self->width);
             }
         }
     }
@@ -2865,14 +2956,16 @@ void show(void *self_in) {
         self->frame_buffer = &self->frame_buffer_2;
     }
 
-    // for (int y = 0; y < self->height - self->dma_rows + 1; y += self->dma_rows) {
+    // for (int y = 0; y < self->height - self->dma_rows + 1; y += self->dma_rows)
+    // {
     //     s3lcd_dma_display(self, fb, y, self->dma_rows, pixels);
     //     fb += pixels;
     // }
 
     // if (self->height % self->dma_rows != 0) {
     //     size_t remaining = self->height % self->dma_rows;
-    //     s3lcd_dma_display(self, fb, (self->height - remaining), remaining, remaining * self->width);
+    //     s3lcd_dma_display(self, fb, (self->height - remaining), remaining,
+    //     remaining * self->width);
     // }
 
     render_descriptor_t descriptor;
@@ -2991,13 +3084,8 @@ static MP_DEFINE_CONST_DICT(s3lcd_locals_dict, s3lcd_locals_dict_table);
 
 #if MICROPY_OBJ_TYPE_REPR == MICROPY_OBJ_TYPE_REPR_SLOT_INDEX
 
-MP_DEFINE_CONST_OBJ_TYPE(
-    s3lcd_type,
-    MP_QSTR_ESPLCD,
-    MP_TYPE_FLAG_NONE,
-    print, s3lcd_print,
-    make_new, s3lcd_make_new,
-    locals_dict, &s3lcd_locals_dict);
+MP_DEFINE_CONST_OBJ_TYPE(s3lcd_type, MP_QSTR_ESPLCD, MP_TYPE_FLAG_NONE, print, s3lcd_print, make_new, s3lcd_make_new,
+                         locals_dict, &s3lcd_locals_dict);
 
 #else
 
@@ -3016,8 +3104,9 @@ const mp_obj_type_t s3lcd_type = {
 // return the first rotation table if no match is found.
 //
 
-s3lcd_rotation_t *set_rotations(uint16_t width, uint16_t height) {;
-    for (int i=0; i < MP_ARRAY_SIZE(ROTATIONS); i++) {
+s3lcd_rotation_t *set_rotations(uint16_t width, uint16_t height) {
+    ;
+    for (int i = 0; i < MP_ARRAY_SIZE(ROTATIONS); i++) {
         s3lcd_rotation_t *rotation;
         if ((rotation = ROTATIONS[i]) != NULL) {
             if (rotation->width == width && rotation->height == height) {
@@ -3029,8 +3118,8 @@ s3lcd_rotation_t *set_rotations(uint16_t width, uint16_t height) {;
 }
 
 ///
-/// .__init__(bus, width, height, reset, rotations, rotation, inversion, options)
-/// required parameters:
+/// .__init__(bus, width, height, reset, rotations, rotation, inversion,
+/// options) required parameters:
 /// -- bus: bus
 /// -- width: width of the display
 /// -- height: height of the display
@@ -3042,10 +3131,7 @@ s3lcd_rotation_t *set_rotations(uint16_t width, uint16_t height) {;
 /// -- options: options
 ///
 
-mp_obj_t s3lcd_make_new(const mp_obj_type_t *type,
-    size_t n_args,
-    size_t n_kw,
-    const mp_obj_t *all_args) {
+mp_obj_t s3lcd_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args) {
     enum {
         ARG_bus,
         ARG_width,
@@ -3161,8 +3247,7 @@ static const mp_map_elem_t s3lcd_module_globals_table[] = {
     {MP_ROM_QSTR(MP_QSTR_TRANSPARENT), MP_ROM_INT(-1)},
     {MP_ROM_QSTR(MP_QSTR_WRAP), MP_ROM_INT(OPTIONS_WRAP)},
     {MP_ROM_QSTR(MP_QSTR_WRAP_H), MP_ROM_INT(OPTIONS_WRAP_H)},
-    {MP_ROM_QSTR(MP_QSTR_WRAP_V), MP_ROM_INT(OPTIONS_WRAP_V)}
-};
+    {MP_ROM_QSTR(MP_QSTR_WRAP_V), MP_ROM_INT(OPTIONS_WRAP_V)}};
 
 static MP_DEFINE_CONST_DICT(mp_module_s3lcd_globals, s3lcd_module_globals_table);
 
@@ -3173,7 +3258,7 @@ const mp_obj_module_t mp_module_s3lcd = {
 
 // use the following for older versions of MicroPython
 
-#if MICROPY_VERSION >= 0x011300                     // MicroPython 1.19 or later
+#if MICROPY_VERSION >= 0x011300 // MicroPython 1.19 or later
 MP_REGISTER_MODULE(MP_QSTR_s3lcd, mp_module_s3lcd);
 #else
 MP_REGISTER_MODULE(MP_QSTR_s3lcd, mp_module_s3lcd, MODULE_ESPLCD_ENABLE);

@@ -93,6 +93,21 @@ typedef struct _s3lcd_rotation_t {
     bool mirror_y;      // set MADCTL MY bit 0x80
 } s3lcd_rotation_t;
 
+typedef struct _transform_descriptor_t {
+    uint16_t *buf;
+    uint16_t width;
+    uint16_t height;
+    uint16_t cx;
+    uint16_t cy;
+    mp_float_t angle;
+    mp_float_t scale_x;
+    mp_float_t scale_y;
+    uint16_t top;
+    uint16_t left;
+    uint16_t right;
+    uint16_t bottom;
+} transform_descriptor_t;
+
 typedef struct _render_descriptor_t {
     uint16_t *framebuf;
     size_t pixels;
