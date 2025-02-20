@@ -1,4 +1,6 @@
 /*
+ * Modifications and additions Copyright (c) 2024-2025 Yeqin Gong
+ *
  * Modifications and additions Copyright (c) 2020-2023 Russ Hughes
  *
  * This file licensed under the MIT License and incorporates work covered by
@@ -565,8 +567,9 @@ static void transform(uint16_t *src, transform_descriptor_t *descriptor) {
 
     bool is_rotation = fcos < 1;
     bool is_scale = (fabs_x > 0 && (fabs_x > 1 || fabs_x < 1)) || (fabs_y > 0 && (fabs_y > 1 || fabs_y < 1));
-    if (!is_rotation && !is_scale && !flip_x && !flip_y)
+    if (!is_rotation && !is_scale && !flip_x && !flip_y) {
         return;
+    }
 
     uint16_t width = descriptor->width;
     uint16_t height = descriptor->height;
@@ -607,8 +610,8 @@ static void transform(uint16_t *src, transform_descriptor_t *descriptor) {
         scale_height = (uint16_t)(rotate_height * fabs_y) + 1;
     }
 
-    descriptor->top = scale_width;
-    descriptor->left = scale_height;
+    descriptor->top = scale_height;
+    descriptor->left = scale_width;
     descriptor->right = descriptor->bottom = 0;
 
     size_t bufsize = scale_width * scale_height * 2;
@@ -626,10 +629,12 @@ static void transform(uint16_t *src, transform_descriptor_t *descriptor) {
             y = (uint16_t)(y1 + dy * ydy + dx * xdy + 0.5);
             i = sy * scale_width + sx;
             if ((x < width) && (y < height)) {
-                if (flip_x)
-                    x = width - x;
-                if (flip_y)
-                    y = height - y;
+                if (flip_x) {
+                    x = width - x - 1;
+                }
+                if (flip_y) {
+                    y = height - y - 1;
+                }
                 descriptor->buf[i] = src[y * width + x];
             }
             if (descriptor->buf[i] != 0) {
@@ -651,9 +656,9 @@ static void transform(uint16_t *src, transform_descriptor_t *descriptor) {
     cx = (uint16_t)((x0 + descriptor->cx * fcos - descriptor->cy * fsin + 1) * fabs_x);
     cy = (uint16_t)((y0 + descriptor->cx * fsin + descriptor->cy * fcos + 1) * fabs_y);
     if (flip_x)
-        cx = scale_width - cx;
+        cx = scale_width - cx - 1;
     if (flip_y)
-        cy = scale_height - cy;
+        cy = scale_height - cy - 1;
 
     descriptor->width = scale_width;
     descriptor->height = scale_height;
@@ -750,8 +755,8 @@ static mp_obj_t s3lcd_blit_buffer(size_t n_args, const mp_obj_t *args) {
         descriptor.buf = NULL;
     }
 
-    mp_obj_t result[4] = {mp_obj_new_int(descriptor.top), mp_obj_new_int(descriptor.left),
-                          mp_obj_new_int(descriptor.right), mp_obj_new_int(descriptor.bottom)};
+    mp_obj_t result[4] = {mp_obj_new_int(descriptor.top + y), mp_obj_new_int(descriptor.left + x),
+                          mp_obj_new_int(descriptor.right + x), mp_obj_new_int(descriptor.bottom + y)};
     return mp_obj_new_tuple(4, result);
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(s3lcd_blit_buffer_obj, 6, 13, s3lcd_blit_buffer);
